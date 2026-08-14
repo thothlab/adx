@@ -1,7 +1,9 @@
-import { type Component, For, type JSX, Show } from "solid-js";
+import { type Component, For, type JSX, onMount, Show } from "solid-js";
 import { HardDrive, Languages, ListTodo, Moon, RefreshCw, Smartphone, Sun, SunMoon } from "lucide-solid";
 import { LOCALES, locale, setLocale, t } from "@/i18n";
 import { cycleTheme, theme } from "@/stores/theme";
+import DeviceList from "@/components/DeviceList";
+import { devices, error, loading, refreshDevices, selectDevice, selected } from "@/stores/devices";
 
 /**
  * The four regions of the app-shell requirement — devices + storages, folder
@@ -28,7 +30,13 @@ const Empty: Component<{ text: string }> = (props) => (
   <div class="p-3 text-xs text-fg-muted">{props.text}</div>
 );
 
-const Layout: Component = () => (
+const Layout: Component = () => {
+  // Enumerate once at startup so a device plugged in before launch is already
+  // in the list when the window appears — an acceptance criterion, and the
+  // first thing a user tries.
+  onMount(() => void refreshDevices());
+
+  return (
   <div class="flex h-full flex-col bg-bg text-fg">
     <header class="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
       <div class="flex items-baseline gap-2">
@@ -38,10 +46,13 @@ const Layout: Component = () => (
 
       <div class="flex items-center gap-1">
         <button
-          class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs hover:bg-bg-muted"
+          class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs hover:bg-bg-muted disabled:opacity-50"
           title={t()("devices.refresh")}
+          disabled={loading()}
+          onClick={() => void refreshDevices()}
         >
-          <RefreshCw size={12} /> {t()("devices.refresh")}
+          <RefreshCw size={12} class={loading() ? "animate-spin" : undefined} />{" "}
+          {t()("devices.refresh")}
         </button>
 
         <button
@@ -80,10 +91,13 @@ const Layout: Component = () => (
           icon={<Smartphone size={13} />}
           class="flex-1 border-b border-border"
         >
-          <div class="space-y-1 p-3">
-            <div class="text-xs font-medium text-fg-subtle">{t()("devices.empty_title")}</div>
-            <div class="text-xs text-fg-muted">{t()("devices.empty_hint")}</div>
-          </div>
+          <DeviceList
+            devices={devices()}
+            loading={loading()}
+            error={error()}
+            selected={selected()}
+            onSelect={selectDevice}
+          />
         </Panel>
         <Panel title={t()("storages.title")} icon={<HardDrive size={13} />} class="flex-1">
           <Empty text={t()("storages.empty")} />
@@ -108,6 +122,7 @@ const Layout: Component = () => (
       </div>
     </div>
   </div>
-);
+  );
+};
 
 export default Layout;

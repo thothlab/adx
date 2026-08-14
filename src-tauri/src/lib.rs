@@ -8,12 +8,7 @@
 //! On Pane it shipped as a launch crash on macOS in two consecutive releases
 //! (commit 2df5e6c) because unit tests never launch the bundled app.
 
-/// Health check for the IPC channel — proves the frontend can reach Rust
-/// before any real command exists. Superseded by `devices_list` in T01.
-#[tauri::command]
-fn ping() -> &'static str {
-    "adx"
-}
+mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -29,7 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![ping])
+        .invoke_handler(tauri::generate_handler![commands::devices_list])
         .run(tauri::generate_context!())
         .expect("error while running ADX");
 }

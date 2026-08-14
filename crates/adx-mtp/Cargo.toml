@@ -11,6 +11,15 @@ description = "MTP backend for ADX — the only crate that knows about mtp-rs"
 adx-core.workspace = true
 serde.workspace = true
 tracing.workspace = true
+mtp-rs.workspace = true
 
-# Filled in by T01. Pinned exactly on purpose — see the workspace manifest.
-# mtp-rs.workspace = true
+# Raw USB enumeration, used for one thing only: telling "no device attached"
+# apart from "device attached in charging-only mode". `mtp-rs` deliberately
+# lists MTP candidates only, so a phone with no MTP interface is invisible
+# there — and that is the case where the user needs a different instruction.
+# Version tracks the one mtp-rs itself resolves, so both share a single
+# enumeration backend rather than fighting over the device.
+nusb = "0.2"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

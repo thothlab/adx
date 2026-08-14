@@ -16,10 +16,26 @@ pub enum ErrorKind {
     /// Distinct from `NoDevice` because the remedy is different: the user
     /// picks file-transfer mode on the phone.
     Unauthorized,
-    /// The device is busy with another operation from this app.
+    /// Nothing else holds the device — this user lacks permission to open it.
+    /// On Linux that means missing udev rules, and the remedy is a command the
+    /// UI can print, so it must not be folded into [`ErrorKind::Occupied`].
+    PermissionDenied,
+    /// The device is temporarily busy; retrying may succeed.
     Busy,
+    /// The device vanished mid-session.
+    Disconnected,
+    /// The library reset the device in software to recover from a wedged
+    /// cancel. The device is still physically present and reopenable — no
+    /// replug needed, which is what separates this from `Disconnected`.
+    DeviceReset,
+    /// A cached object handle went stale because the device re-keyed it
+    /// (Android does this after a media rescan). The fix is to re-list the
+    /// parent and retry once, not to tell the user the file is gone.
+    StaleHandle,
+    Timeout,
     NotFound,
     NotWritable,
+    Unsupported,
     NameTooLong,
     NameInvalid,
     NameTaken,
@@ -59,7 +75,15 @@ impl AdxError {
     /// user changing anything — the reconnect supervisor retries these and
     /// nothing else.
     pub fn is_transient(&self) -> bool {
-        matches!(self.kind, ErrorKind::Io | ErrorKind::Busy | ErrorKind::Protocol)
+        matches!(
+            self.kind,
+            ErrorKind::Io
+                | ErrorKind::Busy
+                | ErrorKind::Timeout
+                | ErrorKind::Protocol
+                | ErrorKind::DeviceReset
+                | ErrorKind::StaleHandle
+        )
     }
 }
 
