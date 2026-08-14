@@ -1,0 +1,16 @@
+[package]
+name = "adx-mtp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "MTP backend for ADX — the only crate that knows about mtp-rs"
+
+[dependencies]
+adx-core.workspace = true
+serde.workspace = true
+tracing.workspace = true
+
+# Filled in by T01. Pinned exactly on purpose — see the workspace manifest.
+# mtp-rs.workspace = true
