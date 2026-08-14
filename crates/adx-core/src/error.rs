@@ -82,8 +82,18 @@ impl AdxError {
                 | ErrorKind::Timeout
                 | ErrorKind::Protocol
                 | ErrorKind::DeviceReset
-                | ErrorKind::StaleHandle
         )
+    }
+
+    /// True when the right recovery is to re-list the parent folder, re-resolve
+    /// the handle and retry once — **not** to retry the same call.
+    ///
+    /// Deliberately not folded into [`is_transient`]: a stale handle survives
+    /// any number of reopens, so a supervisor that retried it as "transient"
+    /// would replay the same dead handle until it gave up. Two different
+    /// recoveries must not share one predicate.
+    pub fn needs_relist(&self) -> bool {
+        matches!(self.kind, ErrorKind::StaleHandle)
     }
 }
 
@@ -104,6 +114,19 @@ mod tests {
         assert!(AdxError::new(ErrorKind::Io, "").is_transient());
         assert!(!AdxError::new(ErrorKind::NotWritable, "").is_transient());
         assert!(!AdxError::occupied("", None).is_transient());
+    }
+
+    /// A stale handle needs a re-list, not a retry — the two recoveries must
+    /// never both claim the same error, or the supervisor picks the wrong one.
+    #[test]
+    fn stale_handle_asks_for_a_relist_not_a_retry() {
+        let stale = AdxError::new(ErrorKind::StaleHandle, "");
+        assert!(stale.needs_relist());
+        assert!(!stale.is_transient());
+
+        let io = AdxError::new(ErrorKind::Io, "");
+        assert!(io.is_transient());
+        assert!(!io.needs_relist());
     }
 
     #[test]
