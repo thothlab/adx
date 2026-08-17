@@ -9,12 +9,14 @@
 mod error;
 mod holder;
 mod session;
+mod transfer;
 mod usb;
 mod watch;
 
 pub use error::map_error;
 pub use holder::exclusive_owner;
 pub use session::{Entry, Session, StorageRef, UploadFailure};
+pub use transfer::{upload_tree, ConflictPolicy, UploadProgress, UploadReport};
 pub use watch::{watch_devices, SETTLE_DELAY};
 
 use adx_core::AdxError;
