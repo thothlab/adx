@@ -23,9 +23,62 @@ on:
         type: string
 
 jobs:
-  build:
+  # Релиз создаётся один раз, отдельным заданием, и только потом в него заливают.
+  #
+  # Иначе каждое из трёх заданий само проверяет «релиза нет — создам», и два
+  # закончивших одновременно дерутся за создание: одно получает ошибку и роняет
+  # свою систему уже после успешной сборки. На первом же прогоне это и вышло —
+  # Linux собрал все три пакета и упал на создании релиза.
+  create-release:
     permissions:
-      # tauri-action создаёт релиз и заливает в него файлы.
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+    steps:
+      - uses: actions/github-script@v7
+        id: create
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        with:
+          script: |
+            const tag = process.env.TAG;
+            const body = [
+              'Сборки ADX для macOS, Windows и Linux.',
+              '',
+              '**Сборки не подписаны.** На macOS система откажется открывать приложение',
+              'с сообщением о неустановленном разработчике: снимите карантин командой',
+              '`xattr -dr com.apple.quarantine /Applications/ADX.app` либо откройте через',
+              'правый клик → «Открыть». На Windows SmartScreen попросит подтверждение',
+              'через «Подробнее» → «Выполнить в любом случае».',
+              '',
+              'Что уже работает: список подключённых устройств, дерево папок и содержимое,',
+              'запись файлов и папок на устройство (в том числе перетаскиванием из Finder),',
+              'удаление, переименование, создание папок. Скачивание с устройства ещё не сделано.',
+            ].join('\n');
+
+            // Существующий релиз переиспользуется: перезапуск упавшего задания не
+            // должен спотыкаться о собственный результат предыдущего прогона.
+            const existing = await github.rest.repos
+              .getReleaseByTag({ ...context.repo, tag })
+              .catch(() => null);
+            if (existing) return existing.data.id;
+
+            const created = await github.rest.repos.createRelease({
+              ...context.repo,
+              tag_name: tag,
+              name: `ADX ${tag}`,
+              body,
+              draft: true,
+              prerelease: false,
+            });
+            return created.data.id;
+          result-encoding: string
+
+  build:
+    needs: create-release
+    permissions:
+      # tauri-action заливает файлы в уже созданный релиз.
       contents: write
 
     strategy:
@@ -103,22 +156,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: "ADX ${{ inputs.tag || github.ref_name }}"
-          releaseBody: |
-            Сборки ADX для macOS, Windows и Linux.
-
-            **Сборки не подписаны.** На macOS система откажется открывать
-            приложение с сообщением о неустановленном разработчике: снимите
-            карантин командой
-            `xattr -dr com.apple.quarantine /Applications/ADX.app`
-            либо откройте через правый клик → «Открыть». На Windows SmartScreen
-            попросит подтверждение через «Подробнее» → «Выполнить в любом случае».
-
-            Что уже работает: список подключённых устройств, дерево папок и
-            содержимое, запись файлов и папок на устройство (в том числе
-            перетаскиванием из Finder), удаление, переименование, создание папок.
-            Скачивание с устройства ещё не сделано.
-          releaseDraft: false
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
+
+  # Черновик снимается только после того, как все три системы отчитались. Релиз,
+  # опубликованный до этого, какое-то время показывает пользователям неполный
+  # набор файлов — и молча, потому что о недостающей системе он ничего не знает.
+  publish:
+    needs: [create-release, build]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              ...context.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+              draft: false,
+            });
