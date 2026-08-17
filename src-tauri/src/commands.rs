@@ -138,7 +138,21 @@ pub async fn device_open(
                 tracing::debug!("closing the previous session failed, continuing: {e}");
             }
         }
-        *guard = Some(Session::open(&serial).await?);
+        // Logged, then returned unchanged. "Устройство занято" is this
+        // product's headline failure mode, and until now it produced no log
+        // line at all: the last line before a failed open was `device_open`,
+        // and silence after it was indistinguishable from success. Observed
+        // for real when a stale ADX instance still held the device.
+        match Session::open(&serial).await {
+            Ok(session) => *guard = Some(session),
+            Err(e) => {
+                match &e.holder {
+                    Some(h) => tracing::warn!("open {serial} failed: {e} (держит {} pid {})", h.name, h.pid),
+                    None => tracing::warn!("open {serial} failed: {e}"),
+                }
+                return Err(e);
+            }
+        }
     }
 
     let session = guard.as_mut().ok_or_else(no_device)?;
