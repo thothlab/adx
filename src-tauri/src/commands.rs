@@ -128,6 +128,7 @@ pub async fn device_open(
     let mut guard = state.session.lock().await;
 
     let already_open = guard.as_ref().is_some_and(|s| s.serial() == serial);
+    tracing::info!("device_open {serial} (already open: {already_open})");
     if !already_open {
         if let Some(previous) = guard.take() {
             // Closing the old session before opening the new one, and ignoring

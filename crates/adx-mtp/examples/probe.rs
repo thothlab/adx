@@ -21,6 +21,10 @@ use adx_mtp::{exclusive_owner, MtpBackend, MtpRsBackend};
 
 #[tokio::main]
 async fn main() {
+    // Kept for step 3: naming the holder needs the serial of the device we
+    // failed to open, and the IORegistry lists an owner for every hub too.
+    let mut first_serial = String::new();
+
     println!("== 1. ADX device list (what the UI shows) ==");
     match MtpRsBackend.list_devices() {
         Ok(devices) if devices.is_empty() => println!("  (empty — nothing attached)"),
@@ -30,6 +34,9 @@ async fn main() {
                     "  serial={:<24} loc={:016x} mtp={} {} {}",
                     d.serial, d.location_id, d.mtp_available, d.manufacturer, d.model
                 );
+            }
+            if let Some(d) = devices.iter().find(|d| d.mtp_available) {
+                first_serial = d.serial.clone();
             }
             // The dedup fix this probe exists to confirm: one physical phone in
             // MTP mode must produce exactly one row, not a browsable row plus a
@@ -72,6 +79,15 @@ async fn main() {
     let opened = match mtp_rs::mtp::MtpDevice::open_first().await {
         Ok(dev) => {
             println!("  open_first: OK");
+            // Printed even on success, and that is the interesting case: on
+            // this machine the phone's `UsbExclusiveOwner` is `adb` while MTP
+            // opens perfectly. The key names whoever opened the *device* node;
+            // MTP and ADB claim different interfaces and do not collide. So a
+            // holder name alone is not evidence that the device is unusable.
+            match exclusive_owner(&first_serial) {
+                Some(h) => println!("  device node owner: {} (pid {}) — MTP still opened", h.name, h.pid),
+                None => println!("  device node owner: none"),
+            }
             Some(dev)
         }
         Err(e) => {
@@ -80,7 +96,7 @@ async fn main() {
             println!("    debug   : {e:?}");
             println!("    exclusive_access = {}", e.is_exclusive_access());
             println!("    retryable        = {}", e.is_retryable());
-            match exclusive_owner() {
+            match exclusive_owner(&first_serial) {
                 Some(h) => println!("    holder  : {} (pid {})", h.name, h.pid),
                 None => println!("    holder  : not reported by IORegistry"),
             }

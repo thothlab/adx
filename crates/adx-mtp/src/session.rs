@@ -87,10 +87,28 @@ impl Session {
             ));
         }
 
-        let opened = MtpDevice::open_by_location(device.location_id)
-            .await
-            .map_err(|e| map_error(&e))?;
+        let opened = match MtpDevice::open_by_location(device.location_id).await {
+            Ok(opened) => opened,
+            Err(e) => {
+                let mut err = map_error(&e);
+                // Naming the process is the difference between "устройство
+                // занято" — which the user can do nothing with — and "закройте
+                // Android File Transfer". Looked up only on this failure, and
+                // only for this device: the IORegistry lists an owner for every
+                // hub on the machine too.
+                if err.kind == ErrorKind::Occupied {
+                    err.holder = crate::exclusive_owner(serial);
+                }
+                return Err(err);
+            }
+        };
         let storages = opened.storages().await.map_err(|e| map_error(&e))?;
+        tracing::info!(
+            "session open: {} {} ({} storage(s))",
+            opened.device_info().manufacturer,
+            opened.device_info().model,
+            storages.len()
+        );
 
         Ok(Self { serial: serial.to_string(), device: opened, storages })
     }

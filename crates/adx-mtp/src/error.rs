@@ -22,9 +22,12 @@ pub fn map_error(err: &MtpError) -> AdxError {
     let message = err.to_string();
 
     let kind = match err {
-        MtpError::ExclusiveAccess => {
-            return AdxError::occupied(message, crate::holder::exclusive_owner())
-        }
+        // Holder deliberately left empty here. Naming the process needs the
+        // device's serial to pick the right node out of the IORegistry — the
+        // tree lists an owner for every hub on the machine — and this function
+        // is a pure translation with no idea which device it is talking about.
+        // `Session::open` fills it in, where the identity is known.
+        MtpError::ExclusiveAccess => return AdxError::occupied(message, None),
         MtpError::PermissionDenied => ErrorKind::PermissionDenied,
         MtpError::NoDevice => ErrorKind::NoDevice,
         MtpError::NotFound => ErrorKind::NotFound,
