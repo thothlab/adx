@@ -1,4 +1,4 @@
-import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import { type Component, createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   AlertCircle,
@@ -14,6 +14,7 @@ import {
 } from "lucide-solid";
 import { t } from "@/i18n";
 import { formatBytes } from "@/lib/format";
+import { afterClick, EMPTY_SELECTION, selectAll, type Selection } from "@/lib/selection";
 import { Button, ConfirmModal, PromptModal } from "@/components/Modal";
 import {
   browseError,
@@ -40,18 +41,47 @@ import { upload } from "@/stores/transfer";
  * was never too few features.
  */
 const Listing: Component = () => {
-  const [picked, setPicked] = createSignal<Set<string>>(new Set());
+  const [rows, setRows] = createSignal<Selection>(EMPTY_SELECTION);
   const [renaming, setRenaming] = createSignal<{ handle: string; name: string } | null>(null);
   const [creating, setCreating] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
 
+  const picked = () => rows().picked;
+  const handles = () => entries().map((e) => e.handle);
   const selection = createMemo(() => entries().filter((e) => picked().has(e.handle)));
 
-  const toggle = (handle: string, additive: boolean) => {
-    const next = additive ? new Set(picked()) : new Set<string>();
-    if (additive && next.has(handle)) next.delete(handle);
-    else next.add(handle);
-    setPicked(next);
+  const clearSelection = () => setRows(EMPTY_SELECTION);
+
+  /**
+   * Leaving a folder drops the selection.
+   *
+   * Not cosmetic: MTP object handles are only unique within a device's
+   * numbering, and a handle from the folder we just left can name a different
+   * object in the folder we just entered. Carrying `picked` across would mean
+   * Delete removing something the user never selected, in a directory they are
+   * no longer looking at. Filtering `selection()` against `entries()` does not
+   * protect against this — a colliding handle passes that filter.
+   */
+  createEffect(on([storageId, crumbs], clearSelection));
+
+  const onRowClick = (handle: string, e: MouseEvent) =>
+    setRows(
+      afterClick(handles(), rows(), handle, {
+        shift: e.shiftKey,
+        additive: e.metaKey || e.ctrlKey,
+      }),
+    );
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    // `e.code`, not `e.key`: on a Russian layout Cmd+A reports the key as "ф",
+    // and a shortcut that stops working when the user switches layout is a
+    // shortcut that does not work.
+    if ((e.metaKey || e.ctrlKey) && e.code === "KeyA") {
+      e.preventDefault();
+      setRows(selectAll(handles()));
+      return;
+    }
+    if (e.key === "Escape") clearSelection();
   };
 
   const pickFiles = async () => {
@@ -65,10 +95,10 @@ const Listing: Component = () => {
   };
 
   const doDelete = async () => {
-    const handles = selection().map((e) => e.handle);
+    const doomed = selection().map((e) => e.handle);
     setDeleting(false);
-    setPicked(new Set<string>());
-    await removeEntries(handles);
+    clearSelection();
+    await removeEntries(doomed);
   };
 
   return (
@@ -115,6 +145,15 @@ const Listing: Component = () => {
           </span>
         </Button>
 
+        {/* The count explains why Rename is greyed out while Delete is not:
+            Rename takes exactly one, Delete takes any number. Without it the
+            two buttons look inconsistently broken. */}
+        <Show when={selection().length}>
+          <span class="ml-2 whitespace-nowrap text-xs text-fg-muted">
+            {t()("listing.selected", { count: selection().length })}
+          </span>
+        </Show>
+
         <span class="ml-auto" />
         <Button onClick={() => void reloadAll()} disabled={busy()} title={t()("listing.reload")}>
           <RefreshCw size={12} class={busy() ? "animate-spin" : undefined} />
@@ -153,7 +192,19 @@ const Listing: Component = () => {
         )}
       </Show>
 
-      <div class="min-h-0 flex-1 overflow-auto">
+      {/* `tabindex` so the container can take focus and receive Cmd+A and
+          Escape at all; `select-none` because without it Shift-click runs the
+          browser's text-extend on mousedown and paints a blue smear across the
+          rows instead of selecting them. */}
+      <div
+        class="min-h-0 flex-1 select-none overflow-auto outline-none"
+        tabindex="0"
+        onKeyDown={onKeyDown}
+        onClick={(e) => {
+          // Blank space below the last row means "never mind".
+          if (e.target === e.currentTarget) clearSelection();
+        }}
+      >
         <Show
           when={storageId()}
           fallback={<div class="p-3 text-xs text-fg-muted">{t()("listing.empty")}</div>}
@@ -186,12 +237,22 @@ const Listing: Component = () => {
                 <For each={entries()}>
                   {(entry) => (
                     <tr
-                      class="cursor-default border-b border-border/40 hover:bg-bg-muted"
-                      classList={{ "bg-bg-muted": picked().has(entry.handle) }}
-                      onClick={(e) => toggle(entry.handle, e.metaKey || e.ctrlKey)}
+                      class="cursor-default border-b border-border/40"
+                      // Selection gets the accent tint, hover keeps the grey —
+                      // and they are mutually exclusive rather than layered,
+                      // because when both were `bg-bg-muted` the row under the
+                      // cursor was indistinguishable from a selected one, which
+                      // makes a multi-row selection impossible to read.
+                      classList={{
+                        "bg-accent/15": picked().has(entry.handle),
+                        "hover:bg-bg-muted": !picked().has(entry.handle),
+                      }}
+                      onClick={(e) => onRowClick(entry.handle, e)}
                       onDblClick={() => {
                         if (entry.isFolder) {
-                          setPicked(new Set<string>());
+                          // The two clicks that precede this one already moved
+                          // the selection here; entering the folder clears it,
+                          // and the folder-change effect clears the anchor.
                           void enterFolder(entry.handle, entry.name);
                         }
                       }}

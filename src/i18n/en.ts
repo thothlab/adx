@@ -67,6 +67,7 @@ const en = {
     rename: "Rename",
     delete: "Delete",
     reload: "Reload",
+    selected: "{{count}} selected",
     drop_hint: "Drag files or folders here from Finder.",
     drop_here: "Drop to copy to the device",
     drop_blocked: "Open a writable folder on the device first",
