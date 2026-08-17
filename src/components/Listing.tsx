@@ -174,7 +174,12 @@ const Listing: Component = () => {
                 <tr class="border-b border-border">
                   <th class="px-2 py-1 text-left font-medium">{t()("listing.name")}</th>
                   <th class="w-24 px-2 py-1 text-right font-medium">{t()("listing.size")}</th>
-                  <th class="w-32 px-2 py-1 text-left font-medium">{t()("listing.modified")}</th>
+                  {/* Wide enough for "2026-08-17 08:19" on one line. At w-32
+                      every date wrapped, which doubled every row's height and
+                      made the listing look like it was rendering badly. */}
+                  <th class="w-36 whitespace-nowrap px-2 py-1 text-left font-medium">
+                    {t()("listing.modified")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -207,7 +212,9 @@ const Listing: Component = () => {
                           {formatBytes(entry.size)}
                         </Show>
                       </td>
-                      <td class="px-2 py-1 font-mono text-fg-muted">{entry.modified ?? "—"}</td>
+                      <td class="whitespace-nowrap px-2 py-1 font-mono text-fg-muted">
+                        {entry.modified ?? "—"}
+                      </td>
                     </tr>
                   )}
                 </For>
