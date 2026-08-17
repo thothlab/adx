@@ -12,7 +12,7 @@ mod commands;
 mod state;
 mod transfer;
 
-use tauri::Emitter;
+use tauri::{Emitter, Manager, RunEvent};
 
 /// Emitted whenever the attached devices change. The frontend replaces its
 /// list wholesale from the payload rather than re-asking, so a plug event costs
@@ -59,6 +59,25 @@ pub fn run() {
             transfer::upload_start,
             transfer::upload_cancel,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running ADX");
+        .build(tauri::generate_context!())
+        .expect("error while building ADX")
+        .run(|app, event| {
+            // Closing the session on the way out, not just dropping it. A
+            // dropped session leaves the phone believing it is still in one,
+            // and the next open then fails until the device times it out —
+            // which the user experiences as "it worked yesterday". Blocking
+            // here is correct: the process is leaving anyway, and the whole
+            // point is that the goodbye reaches the device first.
+            if matches!(event, RunEvent::Exit) {
+                let state = app.state::<state::AppState>();
+                tauri::async_runtime::block_on(async {
+                    if let Some(session) = state.session.lock().await.take() {
+                        match session.close().await {
+                            Ok(()) => tracing::info!("session closed on exit"),
+                            Err(e) => tracing::warn!("closing the session on exit failed: {e}"),
+                        }
+                    }
+                });
+            }
+        });
 }

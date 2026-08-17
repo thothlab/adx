@@ -58,6 +58,19 @@ async fn main() {
         Err(e) => println!("  ERROR {e}"),
     }
 
+    // The two inputs the list is merged from, printed unmerged. One row in
+    // step 1 proves the dedup fired only if this list actually contained the
+    // same phone — otherwise it proves there was nothing to deduplicate.
+    println!("\n== 1b. Charging-only candidates, before the merge ==");
+    let candidates = adx_mtp::charging_only_candidates();
+    if candidates.is_empty() {
+        println!("  (none — so step 1 exercised no deduplication)");
+    } else {
+        for c in &candidates {
+            println!("  loc={:016x} {} {} serial={}", c.location_id, c.manufacturer, c.model, c.serial);
+        }
+    }
+
     println!("\n== 2. Raw mtp-rs enumeration ==");
     match mtp_rs::mtp::MtpDevice::list_devices() {
         Ok(list) if list.is_empty() => println!("  (no MTP devices)"),

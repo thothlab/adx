@@ -13,6 +13,20 @@
 //! itself sees both, and the same enumeration that already merges the two
 //! sources ([`MtpBackend::list_devices`]) turns an event into a list.
 //!
+//! # The startup enumeration is required, not redundant
+//!
+//! `nusb::watch_devices()` reports *changes* and nothing else: on macOS it
+//! drains the already-connected devices at construction, deliberately, to arm
+//! the IOKit notification (`nusb-0.2.7/src/platform/macos_iokit/hotplug.rs:170`).
+//! So a phone plugged in before ADX started produces no event, and an app that
+//! relied on this watcher alone would show an empty list until the user touched
+//! the cable. The one-shot enumeration the window runs at startup is what
+//! covers that, and removing it as "the watcher handles it" would break the
+//! most common case there is.
+//!
+//! This also means silence at startup is correct behaviour, not a dead watcher
+//! — which is why the watcher logs a line when it starts.
+//!
 //! # Why re-enumerating here cannot disturb an open session
 //!
 //! Enumeration reads USB descriptors and never opens a device: `mtp-rs` gets
@@ -57,6 +71,12 @@ where
             return;
         }
     };
+
+    // Logged on success, not only on failure. Without it the only evidence the
+    // watcher exists is the absence of a warning, and "no warning" looks
+    // identical to "never started" — which is exactly the ambiguity that made
+    // this feature unverifiable the first time it shipped.
+    tracing::info!("USB hotplug watch started; the device list follows the cable");
 
     let mut last: Option<Vec<DiscoveredDevice>> = None;
 

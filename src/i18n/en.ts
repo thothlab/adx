@@ -15,8 +15,11 @@ const en = {
     empty_hint:
       "Connect an Android device with a USB cable and pick file transfer mode on the phone.",
     charging_only: "Charging only — pick file transfer mode on the phone",
+    // Deliberately names the setting without a menu path. Vendor skins rename
+    // and move these screens, and on some builds the setting only takes effect
+    // with USB debugging on — a wrong path in the app is worse than no hint.
     charging_only_hint:
-      "To stop repeating it: Developer options → Default USB configuration → File Transfer.",
+      "Android can remember the choice: look for a default USB mode setting on the phone and set it once.",
   },
   errors: {
     no_device: "No device found",

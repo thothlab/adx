@@ -60,27 +60,30 @@ const Layout: Component = () => {
     // OS refuses to hand out notifications.
     void refreshDevices();
 
-    const subscriptions = [watchDevices(), watchUploads()];
-    onCleanup(() => {
-      for (const pending of subscriptions) void pending.then((un) => un());
-    });
-
     // Native file drops from Finder. `dragDropEnabled: true` in
     // `tauri.conf.json` is what routes them here instead of to the webview's
     // own HTML5 handlers — the inverse of Pane's setting, because there the
     // internal drag was the important one and here the external drop is.
-    void getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (event.payload.type === "over" || event.payload.type === "enter") {
-          setDragging(true);
-        } else if (event.payload.type === "drop") {
-          setDragging(false);
-          if (canWrite()) void upload(event.payload.paths);
-        } else {
-          setDragging(false);
-        }
-      })
-      .then((un) => onCleanup(un));
+    const dragDrop = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "over" || event.payload.type === "enter") {
+        setDragging(true);
+      } else if (event.payload.type === "drop") {
+        setDragging(false);
+        if (canWrite()) void upload(event.payload.paths);
+      } else {
+        setDragging(false);
+      }
+    });
+
+    // Every unlisten registered here, synchronously. `promise.then((un) =>
+    // onCleanup(un))` looks equivalent and is not: by the time the callback
+    // runs there is no reactive owner, so `onCleanup` silently does nothing and
+    // the listener survives every hot reload. Stacked drop listeners mean one
+    // drag from Finder starting the same upload several times.
+    const subscriptions = [watchDevices(), watchUploads(), dragDrop];
+    onCleanup(() => {
+      for (const pending of subscriptions) void pending.then((un) => un());
+    });
   });
 
   // Opening and closing follow the selection, and only the selection. `on(...,
