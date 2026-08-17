@@ -9,6 +9,15 @@
 //! (commit 2df5e6c) because unit tests never launch the bundled app.
 
 mod commands;
+mod state;
+mod transfer;
+
+use tauri::Emitter;
+
+/// Emitted whenever the attached devices change. The frontend replaces its
+/// list wholesale from the payload rather than re-asking, so a plug event costs
+/// one enumeration, not two.
+pub const DEVICES_EVENT: &str = "devices-changed";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,7 +33,32 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![commands::devices_list])
+        .manage(state::AppState::default())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                adx_mtp::watch_devices(move |devices| {
+                    let dtos: Vec<_> = devices.into_iter().map(commands::to_device_dto).collect();
+                    if let Err(e) = handle.emit(DEVICES_EVENT, dtos) {
+                        tracing::warn!("could not deliver the device list to the window: {e}");
+                    }
+                })
+                .await;
+            });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::devices_list,
+            commands::device_open,
+            commands::device_close,
+            commands::storages_refresh,
+            commands::folder_list,
+            commands::folder_create,
+            commands::entry_delete,
+            commands::entry_rename,
+            transfer::upload_start,
+            transfer::upload_cancel,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running ADX");
 }

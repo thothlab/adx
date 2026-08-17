@@ -1,5 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AdxError, DeviceDto } from "./types";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type {
+  AdxError,
+  ConflictPolicy,
+  DeviceDto,
+  EntryDto,
+  OpenedDeviceDto,
+  StorageDto,
+  UploadOutcome,
+  UploadProgress,
+} from "./types";
 
 /**
  * The single place that names Tauri command strings. Everything else calls
@@ -9,8 +19,46 @@ import type { AdxError, DeviceDto } from "./types";
 export const api = {
   devices: {
     list: () => invoke<DeviceDto[]>("devices_list"),
+    open: (serial: string) => invoke<OpenedDeviceDto>("device_open", { serial }),
+    close: () => invoke<void>("device_close"),
+  },
+  storages: {
+    refresh: () => invoke<StorageDto[]>("storages_refresh"),
+  },
+  folders: {
+    /** `parent = null` lists the root of the storage. */
+    list: (storageId: string, parent: string | null) =>
+      invoke<EntryDto[]>("folder_list", { storageId, parent }),
+    create: (storageId: string, parent: string | null, name: string) =>
+      invoke<string>("folder_create", { storageId, parent, name }),
+  },
+  entries: {
+    remove: (storageId: string, handle: string) =>
+      invoke<void>("entry_delete", { storageId, handle }),
+    rename: (storageId: string, handle: string, name: string) =>
+      invoke<void>("entry_rename", { storageId, handle, name }),
+  },
+  upload: {
+    start: (storageId: string, parent: string | null, paths: string[], policy: ConflictPolicy) =>
+      invoke<UploadOutcome>("upload_start", { storageId, parent, paths, policy }),
+    cancel: () => invoke<void>("upload_cancel"),
   },
 };
+
+/** Event names, mirrored from `src-tauri`. */
+export const events = {
+  /** The attached devices changed — payload is the whole new list. */
+  devicesChanged: "devices-changed",
+  uploadProgress: "upload-progress",
+} as const;
+
+export function onDevicesChanged(fn: (devices: DeviceDto[]) => void): Promise<UnlistenFn> {
+  return listen<DeviceDto[]>(events.devicesChanged, (e) => fn(e.payload));
+}
+
+export function onUploadProgress(fn: (p: UploadProgress) => void): Promise<UnlistenFn> {
+  return listen<UploadProgress>(events.uploadProgress, (e) => fn(e.payload));
+}
 
 /** Tauri rejects with whatever the command's error type serialised to. Ours is
  *  always an `AdxError`, but a panic or a plugin error can still surface as a

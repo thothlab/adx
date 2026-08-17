@@ -1,11 +1,16 @@
 import { createSignal } from "solid-js";
-import { api, asAdxError } from "@/ipc/client";
+import { api, asAdxError, onDevicesChanged } from "@/ipc/client";
 import type { AdxError, DeviceDto } from "@/ipc/types";
 
 /**
  * Device list state. A plain store rather than `createResource` because the
- * list has two independent triggers — the user's Refresh button and (from T02)
- * hotplug events — and a resource's refetch semantics fit neither cleanly.
+ * list has three independent triggers — startup, the Refresh button, and USB
+ * hotplug events — and a resource's refetch semantics fit none of them cleanly.
+ *
+ * The Refresh button still exists, but it is now a fallback rather than the
+ * mechanism: `watchDevices()` pushes a new list whenever USB changes, including
+ * the case the button was really there for — the user picking file-transfer
+ * mode on the phone half a minute after plugging the cable in.
  */
 
 const [devices, setDevices] = createSignal<DeviceDto[]>([]);
@@ -19,6 +24,38 @@ export function selectDevice(serial: string | null): void {
   setSelected(serial);
 }
 
+/** The device the user is working with, or `null`. */
+export function selectedDevice(): DeviceDto | undefined {
+  const serial = selected();
+  return serial ? devices().find((d) => d.serial === serial) : undefined;
+}
+
+/**
+ * Replace the list, keeping the selection if the device is still there.
+ *
+ * Keeping it is the whole point: a hotplug event fires when *any* USB device
+ * changes, including ones ADX does not care about. Resetting the selection on
+ * every list would close the open session and throw away the user's place in
+ * the folder tree because someone plugged in a mouse.
+ */
+function applyList(list: DeviceDto[]): void {
+  setDevices(list);
+  setError(null);
+
+  const current = selected();
+  if (current && !list.some((d) => d.serial === current)) {
+    setSelected(null);
+  }
+
+  // With exactly one usable device and nothing chosen, choose it. The first
+  // question this app got from its first user was "what do I do next" while
+  // looking at a list holding their only phone.
+  if (selected() === null) {
+    const ready = list.filter((d) => d.state === "ready");
+    if (ready.length === 1) setSelected(ready[0].serial);
+  }
+}
+
 export async function refreshDevices(): Promise<void> {
   setLoading(true);
   // Clearing the error here, not only on success, is deliberate. On Pane a red
@@ -28,16 +65,7 @@ export async function refreshDevices(): Promise<void> {
   // answer goes first.
   setError(null);
   try {
-    const list = await api.devices.list();
-    setDevices(list);
-
-    // A selected device that is no longer attached must not stay selected:
-    // every downstream panel keys off it, and pointing them at a device that
-    // is gone is how a UI ends up showing a tree it can never refresh.
-    const current = selected();
-    if (current && !list.some((d) => d.serial === current)) {
-      setSelected(null);
-    }
+    applyList(await api.devices.list());
   } catch (e) {
     setError(asAdxError(e));
     setDevices([]);
@@ -46,3 +74,17 @@ export async function refreshDevices(): Promise<void> {
     setLoading(false);
   }
 }
+
+/**
+ * Subscribe to hotplug. Returns the unlisten function; the caller owns it.
+ *
+ * The backend sends the full list rather than a delta, so there is no
+ * enumerate-on-event round trip and no window where the UI's idea of what is
+ * attached disagrees with the backend's.
+ */
+export function watchDevices(): Promise<() => void> {
+  return onDevicesChanged(applyList);
+}
+
+/** Exposed for tests: the selection rules are the part worth pinning. */
+export const __test = { applyList, setSelected, setDevices };

@@ -8,6 +8,67 @@ export interface DeviceDto {
   state: "ready" | "unauthorized";
 }
 
+/**
+ * Mirrors `StorageDto`. Sizes are numbers (quantities, all far below 2^53),
+ * `id` is a string (an opaque backend token whose full width matters).
+ */
+export interface StorageDto {
+  id: string;
+  description: string;
+  totalCapacity: number;
+  freeSpace: number;
+  isWritable: boolean;
+}
+
+/** Mirrors `EntryDto`. */
+export interface EntryDto {
+  handle: string;
+  name: string;
+  size: number;
+  isFolder: boolean;
+  /** `YYYY-MM-DD HH:MM`, already formatted by the backend. */
+  modified: string | null;
+}
+
+/** Mirrors `OpenedDeviceDto`. */
+export interface OpenedDeviceDto {
+  serial: string;
+  model: string;
+  canWrite: boolean;
+  canRename: boolean;
+  storages: StorageDto[];
+}
+
+/** What to do with names that already exist on the device. */
+export type ConflictPolicy = "ask" | "replace" | "skip";
+
+/**
+ * Mirrors `UploadOutcome`. A tagged union on purpose: every branch of the
+ * transfer ends in exactly one of these, so the UI clears its progress state on
+ * `status` alone and can never be left waiting on a job that already finished.
+ */
+export type UploadOutcome =
+  | { status: "conflicts"; names: string[] }
+  | {
+      status: "done";
+      files: number;
+      folders: number;
+      replaced: number;
+      skipped: number;
+      bytes: number;
+      warnings: string[];
+    }
+  | { status: "cancelled"; files: number; bytes: number; warnings: string[] };
+
+/** Payload of the `upload-progress` event. */
+export interface UploadProgress {
+  done: number;
+  total: number;
+  bytesDone: number;
+  bytesTotal: number;
+  name: string;
+}
+
 /** Mirrors `AdxError` in `crates/adx-core/src/error.rs`. The UI branches on
  *  `kind` and renders its own localised text; `message` is the technical
  *  detail shown on demand. */

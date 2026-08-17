@@ -15,6 +15,8 @@ const en = {
     empty_hint:
       "Connect an Android device with a USB cable and pick file transfer mode on the phone.",
     charging_only: "Charging only — pick file transfer mode on the phone",
+    charging_only_hint:
+      "To stop repeating it: Developer options → Default USB configuration → File Transfer.",
   },
   errors: {
     no_device: "No device found",
@@ -46,6 +48,7 @@ const en = {
   tree: {
     title: "Folders",
     empty: "Select a storage",
+    root: "Storage",
   },
   listing: {
     title: "Files",
@@ -55,10 +58,40 @@ const en = {
     size: "Size",
     modified: "Modified",
     size_unknown: "unknown",
+    upload_files: "Add files",
+    upload_folder: "Add folder",
+    new_folder: "New folder",
+    rename: "Rename",
+    delete: "Delete",
+    reload: "Reload",
+    drop_hint: "Drag files or folders here from Finder.",
+    drop_here: "Drop to copy to the device",
+    drop_blocked: "Open a writable folder on the device first",
   },
   jobs: {
     title: "Operations",
     empty: "No operations running",
+    preparing: "Preparing…",
+    cancel: "Stop",
+    done: "Copied {{files}} file(s), {{bytes}}",
+    folders: "{{count}} folder(s) created",
+    replaced: "{{count}} replaced",
+    skipped: "{{count}} skipped",
+    cancelled: "Stopped after {{files}} file(s), {{bytes}}",
+  },
+  dialog: {
+    cancel: "Cancel",
+    create: "Create",
+    rename: "Rename",
+    name_label: "Name",
+    new_folder_title: "New folder",
+    rename_title: "Rename",
+    delete_title: "Delete from the device?",
+    delete_body: "{{count}} item(s) will be deleted. Folders go with everything inside them.",
+    conflict_title: "Already on the device",
+    conflict_body: "{{count}} name(s) already exist in this folder. Nothing has been written yet.",
+    conflict_replace: "Replace",
+    conflict_skip: "Skip these",
   },
   settings: {
     theme: "Theme",

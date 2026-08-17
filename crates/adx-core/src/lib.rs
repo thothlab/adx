@@ -7,6 +7,8 @@
 
 pub mod error;
 pub mod model;
+pub mod upload;
 
 pub use error::{AdxError, ErrorKind, ProcessRef};
 pub use model::{DeviceState, TransferDirection, TransferState};
+pub use upload::{plan_upload, SkipReason, UploadItem, UploadPlan};

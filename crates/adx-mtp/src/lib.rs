@@ -8,10 +8,14 @@
 
 mod error;
 mod holder;
+mod session;
 mod usb;
+mod watch;
 
 pub use error::map_error;
 pub use holder::exclusive_owner;
+pub use session::{Entry, Session, StorageRef, UploadFailure};
+pub use watch::{watch_devices, SETTLE_DELAY};
 
 use adx_core::AdxError;
 

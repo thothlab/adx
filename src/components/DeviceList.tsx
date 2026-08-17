@@ -35,7 +35,15 @@ const DeviceRow: Component<{
       <Show
         when={props.device.state === "ready"}
         fallback={
-          <span class="block text-xs text-warn">{t()("devices.charging_only")}</span>
+          <>
+            <span class="block text-xs text-warn">{t()("devices.charging_only")}</span>
+            {/* The persistent setting, not just the one-off swipe. A user who
+                plugs the same phone in daily should have to do this once, and
+                nothing in the notification shade tells them it exists. */}
+            <span class="mt-0.5 block text-xs text-fg-muted">
+              {t()("devices.charging_only_hint")}
+            </span>
+          </>
         }
       >
         <span class="block truncate font-mono text-xs text-fg-muted">

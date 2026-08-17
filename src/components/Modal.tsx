@@ -1,0 +1,149 @@
+import { type Component, createEffect, createSignal, For, type JSX, Show } from "solid-js";
+import { t } from "@/i18n";
+
+/**
+ * Dialogs.
+ *
+ * `confirm()` and `prompt()` are not merely discouraged in a Tauri WKWebView —
+ * they are inert. They return immediately with the "cancel" answer and no
+ * window ever appears, so a delete guarded by `confirm()` silently deletes and
+ * a rename guarded by `prompt()` silently does nothing. Source:
+ * `Projects/Pane/Правки`, commit 81dc73e. Hence these.
+ */
+
+export const Modal: Component<{
+  title: string;
+  onClose: () => void;
+  children: JSX.Element;
+  footer: JSX.Element;
+}> = (props) => (
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    onClick={(e) => {
+      if (e.target === e.currentTarget) props.onClose();
+    }}
+  >
+    <div class="w-full max-w-md rounded-lg border border-border bg-bg shadow-xl">
+      <header class="border-b border-border px-4 py-2.5 text-sm font-medium">{props.title}</header>
+      <div class="px-4 py-3 text-xs text-fg-subtle">{props.children}</div>
+      <footer class="flex justify-end gap-2 border-t border-border px-4 py-2.5">
+        {props.footer}
+      </footer>
+    </div>
+  </div>
+);
+
+export const Button: Component<{
+  children: JSX.Element;
+  onClick: () => void;
+  variant?: "primary" | "danger" | "plain";
+  disabled?: boolean;
+  title?: string;
+}> = (props) => (
+  <button
+    class="rounded border px-2.5 py-1 text-xs disabled:opacity-40"
+    classList={{
+      "border-accent bg-accent text-white hover:opacity-90": props.variant === "primary",
+      "border-danger bg-danger text-white hover:opacity-90": props.variant === "danger",
+      "border-border hover:bg-bg-muted": !props.variant || props.variant === "plain",
+    }}
+    title={props.title}
+    disabled={props.disabled}
+    onClick={() => props.onClick()}
+  >
+    {props.children}
+  </button>
+);
+
+/** A single-field dialog, used for "new folder" and "rename". */
+export const PromptModal: Component<{
+  title: string;
+  label: string;
+  initial?: string;
+  confirmLabel: string;
+  onConfirm: (value: string) => void;
+  onClose: () => void;
+}> = (props) => {
+  const [value, setValue] = createSignal(props.initial ?? "");
+  let input: HTMLInputElement | undefined;
+
+  createEffect(() => {
+    // Focus and preselect the stem, so renaming "photo.jpg" does not mean
+    // retyping the extension.
+    input?.focus();
+    const dot = value().lastIndexOf(".");
+    input?.setSelectionRange(0, dot > 0 ? dot : value().length);
+  });
+
+  const submit = () => {
+    const name = value().trim();
+    if (name) props.onConfirm(name);
+  };
+
+  return (
+    <Modal
+      title={props.title}
+      onClose={props.onClose}
+      footer={
+        <>
+          <Button onClick={props.onClose}>{t()("dialog.cancel")}</Button>
+          <Button variant="primary" disabled={!value().trim()} onClick={submit}>
+            {props.confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <label class="block space-y-1">
+        <span class="text-fg-muted">{props.label}</span>
+        <input
+          ref={input}
+          class="w-full rounded border border-border bg-bg-subtle px-2 py-1 text-xs text-fg outline-none focus:border-accent"
+          value={value()}
+          // macOS rewrites straight quotes and apostrophes into typographic
+          // ones inside text inputs. A filename that gains a "smart" quote no
+          // longer matches the file the user meant. Source: Pane, c5ebae3.
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck={false}
+          onInput={(e) => setValue(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+            if (e.key === "Escape") props.onClose();
+          }}
+        />
+      </label>
+    </Modal>
+  );
+};
+
+/** A yes/no dialog with an optional list of affected names. */
+export const ConfirmModal: Component<{
+  title: string;
+  body: string;
+  names?: string[];
+  confirmLabel: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}> = (props) => (
+  <Modal
+    title={props.title}
+    onClose={props.onClose}
+    footer={
+      <>
+        <Button onClick={props.onClose}>{t()("dialog.cancel")}</Button>
+        <Button variant={props.danger ? "danger" : "primary"} onClick={props.onConfirm}>
+          {props.confirmLabel}
+        </Button>
+      </>
+    }
+  >
+    <p>{props.body}</p>
+    <Show when={props.names?.length}>
+      <ul class="mt-2 max-h-40 overflow-auto rounded border border-border bg-bg-subtle p-2 font-mono text-xs">
+        <For each={props.names}>{(n) => <li class="truncate">{n}</li>}</For>
+      </ul>
+    </Show>
+  </Modal>
+);

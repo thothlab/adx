@@ -12,6 +12,14 @@ adx-core.workspace = true
 serde.workspace = true
 tracing.workspace = true
 mtp-rs.workspace = true
+futures.workspace = true
+tokio.workspace = true
+
+# Bridges a `tokio::fs::File` to the `Stream<Item = Result<Bytes, io::Error>>`
+# that `Storage::upload` wants. Streaming rather than reading the file in:
+# uploads here are routinely gigabytes of video, and MTP needs only the length
+# upfront, not the bytes.
+tokio-util = { version = "0.7", features = ["io"] }
 
 # Raw USB enumeration, used for one thing only: telling "no device attached"
 # apart from "device attached in charging-only mode". `mtp-rs` deliberately

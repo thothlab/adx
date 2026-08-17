@@ -42,10 +42,12 @@ name = "adx-mtp"
 version = "0.1.0"
 dependencies = [
  "adx-core",
+ "futures",
  "mtp-rs",
  "nusb",
  "serde",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
