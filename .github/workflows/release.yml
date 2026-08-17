@@ -1,0 +1,124 @@
+name: release
+
+# Собирает установщики под три системы и выкладывает их в релиз GitHub.
+#
+# Запуск: пуш тега `v*` (обычный путь) либо вручную через workflow_dispatch с
+# указанием тега — второе нужно, чтобы пересобрать релиз, не переставляя тег.
+#
+# Подписи нет ни на одной системе. На macOS это значит, что Gatekeeper покажет
+# «приложение повреждено или его автор не установлен»; лечится либо Apple
+# Developer ID (тогда сюда добавляются секреты APPLE_*), либо инструкцией для
+# пользователя. Оставлено осознанно: сертификата у проекта пока нет, и молча
+# выпускать сборку, делая вид, что она подписана, хуже, чем сказать об этом.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Тег релиза, например v0.1.0"
+        required: true
+        type: string
+
+jobs:
+  build:
+    permissions:
+      # tauri-action создаёт релиз и заливает в него файлы.
+      contents: write
+
+    strategy:
+      # Одна упавшая система не должна отменять две другие: собранное всё равно
+      # попадёт в релиз, а чинить останется только её.
+      fail-fast: false
+      matrix:
+        include:
+          # Универсальный бинарь вместо двух отдельных сборок: пользователю не
+          # надо выбирать между Intel и Apple silicon, а нам — объяснять разницу.
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            rust-targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+            label: macOS
+          # 22.04, а не latest: собранное на более новой glibc не запустится на
+          # более старой, и обратной совместимости здесь нет.
+          - platform: ubuntu-22.04
+            args: ""
+            rust-targets: ""
+            label: Linux
+          - platform: windows-latest
+            args: ""
+            rust-targets: ""
+            label: Windows
+
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Системные зависимости (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            file
+
+      # Версия берётся из поля packageManager в package.json — задавать её ещё и
+      # здесь значит завести второй источник правды, который однажды разойдётся.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      # Цель сборки лежит в корне репозитория: src-tauri — участник cargo
+      # workspace, поэтому target общий и путь не тот, что в шаблоне Tauri.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Тесты
+        run: |
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+          cargo test --workspace
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: "ADX ${{ inputs.tag || github.ref_name }}"
+          releaseBody: |
+            Сборки ADX для macOS, Windows и Linux.
+
+            **Сборки не подписаны.** На macOS система откажется открывать
+            приложение с сообщением о неустановленном разработчике: снимите
+            карантин командой
+            `xattr -dr com.apple.quarantine /Applications/ADX.app`
+            либо откройте через правый клик → «Открыть». На Windows SmartScreen
+            попросит подтверждение через «Подробнее» → «Выполнить в любом случае».
+
+            Что уже работает: список подключённых устройств, дерево папок и
+            содержимое, запись файлов и папок на устройство (в том числе
+            перетаскиванием из Finder), удаление, переименование, создание папок.
+            Скачивание с устройства ещё не сделано.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
