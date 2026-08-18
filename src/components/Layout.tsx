@@ -112,7 +112,13 @@ const Layout: Component = () => {
   );
 
   return (
-    <div class="flex h-full flex-col bg-bg text-fg">
+    // `select-none` on the whole shell, not just on the listing: this is a file
+    // manager, and every drag in it is meant to move a divider or a file. A
+    // drag that misses the divider by two pixels otherwise paints the browser's
+    // blue text selection across the panel labels — the same artefact that made
+    // multi-row selection unreadable before (commit 7987acb), in a new place.
+    // Content that is meant to be selected opts back in with `select-text`.
+    <div class="flex h-full select-none flex-col bg-bg text-fg">
       <header class="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
         <div class="flex items-baseline gap-2">
           <span class="text-sm font-semibold tracking-tight">{t()("app.name")}</span>

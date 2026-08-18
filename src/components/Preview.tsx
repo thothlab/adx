@@ -37,6 +37,16 @@ const Preview: Component<{ entry: EntryDto; storageId: string; onClose: () => vo
   const limit = kind ? PREVIEW_LIMITS[kind] : 0;
   const tooBig = !!kind && !isTruncatable(kind) && entry.size > limit;
 
+  // Escape closes it. Registered on `document` rather than on the overlay,
+  // because the overlay only has focus if the user has clicked into it — and
+  // the modal opens from a double-click on a row, which leaves focus on the
+  // listing behind it.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") props.onClose();
+  };
+  document.addEventListener("keydown", onKeyDown);
+  onCleanup(() => document.removeEventListener("keydown", onKeyDown));
+
   let objectUrl: string | null = null;
   // Registered synchronously, not inside the resource's `then`: by the time a
   // promise resolves there is no reactive owner left and `onCleanup` silently
@@ -134,7 +144,10 @@ const Preview: Component<{ entry: EntryDto; storageId: string; onClose: () => vo
                       </Show>
 
                       <Show when={kind === "text"}>
-                        <pre class="h-full whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed">
+                        {/* `select-text` against the shell's `select-none`:
+                            copying a line out of a config or a log is the main
+                            reason to open a text file at all. */}
+                        <pre class="h-full select-text whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed">
                           {loaded().text}
                         </pre>
                       </Show>

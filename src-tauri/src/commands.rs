@@ -260,6 +260,12 @@ const PREVIEW_LIMIT: u64 = 64 * 1024 * 1024;
 /// array of numbers — roughly six bytes of JSON per byte of file, parsed by the
 /// webview's JSON reader — which turns a 5 MB photo into 30 MB of text. The
 /// `Response` path hands the buffer over as an `ArrayBuffer` instead.
+///
+/// Unlike a download, this holds the session for the whole read rather than
+/// releasing it between windows. That is deliberate and safe *because* of the
+/// cap: a preview is one bounded read the user is actively waiting for, the
+/// same shape as a folder listing, and the ceiling is what keeps it that way.
+/// A whole-file read here would be the case the windowed executor exists for.
 #[tauri::command]
 pub async fn entry_read(
     state: State<'_, AppState>,

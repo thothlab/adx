@@ -48,7 +48,7 @@ const Splitter: Component<{
 
   return (
     <div
-      class="group relative z-10 cursor-col-resize bg-border"
+      class="relative z-10 cursor-col-resize bg-border transition-colors hover:bg-accent"
       role="separator"
       aria-orientation="vertical"
       aria-label={props.label}
@@ -70,10 +70,12 @@ const Splitter: Component<{
       onPointerCancel={stop}
       onDblClick={() => props.onReset()}
     >
-      {/* The line is 1px so the layout reads as one hairline; the grab area is
-          9px, centred on it and spilling over both neighbours. A 1px hit target
-          is a divider the user has to aim at. */}
-      <span class="absolute inset-y-0 -left-1 -right-1 group-hover:bg-accent/40" />
+      {/* Two separate things: the hairline is what the eye sees and what turns
+          accent under the cursor, and this is the grab area — 9px, centred on
+          the line and spilling over both neighbours, deliberately invisible. A
+          1px hit target is a divider the user has to aim at; a 9px *visible*
+          one is a bar down the middle of the window. */}
+      <span class="absolute inset-y-0 -left-1 -right-1" />
     </div>
   );
 };
