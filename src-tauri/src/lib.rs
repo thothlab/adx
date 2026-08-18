@@ -58,6 +58,8 @@ pub fn run() {
             commands::entry_rename,
             transfer::upload_start,
             transfer::upload_cancel,
+            transfer::download_start,
+            transfer::download_cancel,
         ])
         .build(tauri::generate_context!())
         .expect("error while building ADX")

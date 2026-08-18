@@ -4,11 +4,12 @@ import type {
   AdxError,
   ConflictPolicy,
   DeviceDto,
+  DownloadRootDto,
   EntryDto,
   OpenedDeviceDto,
   StorageDto,
-  UploadOutcome,
-  UploadProgress,
+  TransferOutcome,
+  TransferProgress,
 } from "./types";
 
 /**
@@ -40,8 +41,19 @@ export const api = {
   },
   upload: {
     start: (storageId: string, parent: string | null, paths: string[], policy: ConflictPolicy) =>
-      invoke<UploadOutcome>("upload_start", { storageId, parent, paths, policy }),
+      invoke<TransferOutcome>("upload_start", { storageId, parent, paths, policy }),
     cancel: () => invoke<void>("upload_cancel"),
+  },
+  download: {
+    /** `roots` are the rows the user selected; `dest` is a folder on this
+     *  computer. Folders bring their contents. */
+    start: (
+      storageId: string,
+      roots: DownloadRootDto[],
+      dest: string,
+      policy: ConflictPolicy,
+    ) => invoke<TransferOutcome>("download_start", { storageId, roots, dest, policy }),
+    cancel: () => invoke<void>("download_cancel"),
   },
 };
 
@@ -50,14 +62,19 @@ export const events = {
   /** The attached devices changed — payload is the whole new list. */
   devicesChanged: "devices-changed",
   uploadProgress: "upload-progress",
+  downloadProgress: "download-progress",
 } as const;
 
 export function onDevicesChanged(fn: (devices: DeviceDto[]) => void): Promise<UnlistenFn> {
   return listen<DeviceDto[]>(events.devicesChanged, (e) => fn(e.payload));
 }
 
-export function onUploadProgress(fn: (p: UploadProgress) => void): Promise<UnlistenFn> {
-  return listen<UploadProgress>(events.uploadProgress, (e) => fn(e.payload));
+export function onUploadProgress(fn: (p: TransferProgress) => void): Promise<UnlistenFn> {
+  return listen<TransferProgress>(events.uploadProgress, (e) => fn(e.payload));
+}
+
+export function onDownloadProgress(fn: (p: TransferProgress) => void): Promise<UnlistenFn> {
+  return listen<TransferProgress>(events.downloadProgress, (e) => fn(e.payload));
 }
 
 /** Tauri rejects with whatever the command's error type serialised to. Ours is

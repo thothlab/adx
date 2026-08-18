@@ -1,8 +1,10 @@
 import { type Component, createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
+import { downloadDir } from "@tauri-apps/api/path";
 import {
   AlertCircle,
   ChevronRight,
+  Download,
   File as FileIcon,
   Folder,
   FolderPlus,
@@ -15,7 +17,9 @@ import {
 import { t } from "@/i18n";
 import { formatBytes } from "@/lib/format";
 import { afterClick, EMPTY_SELECTION, selectAll, type Selection } from "@/lib/selection";
+import { Dropdown, DropdownItem } from "@/components/Dropdown";
 import { Button, ConfirmModal, PromptModal } from "@/components/Modal";
+import { download, transferBusy } from "@/stores/download";
 import {
   browseError,
   busy,
@@ -36,9 +40,12 @@ import { upload } from "@/stores/transfer";
 /**
  * The file listing, and every action that changes the device.
  *
- * The toolbar is deliberately flat — six buttons, all visible, none behind a
- * menu. The requirement is "maximally simple", and the previous tool's problem
- * was never too few features.
+ * The toolbar is deliberately flat — one visible button per action. The
+ * requirement is "maximally simple", and the previous tool's problem was never
+ * too few features. The single exception is "copy to computer", which is one
+ * verb with two destinations: a folder the user picks, or the standard
+ * Downloads folder. Two top-level buttons for the same verb would read as two
+ * features rather than one.
  */
 const Listing: Component = () => {
   const [rows, setRows] = createSignal<Selection>(EMPTY_SELECTION);
@@ -101,15 +108,60 @@ const Listing: Component = () => {
     await removeEntries(doomed);
   };
 
+  /**
+   * Everything the download needs, taken from the rows already on screen.
+   *
+   * Sent whole rather than as bare handles so the backend does not have to
+   * re-read the folder to learn what is a folder and how big each file is —
+   * that is a device round trip per row for information the listing has.
+   */
+  const roots = () =>
+    selection().map((e) => ({
+      handle: e.handle,
+      name: e.name,
+      isFolder: e.isFolder,
+      size: e.size,
+    }));
+
+  const saveTo = async (dest: string | null) => {
+    if (dest) await download(roots(), dest);
+  };
+
+  const pickDestination = async () => {
+    const chosen = await open({ multiple: false, directory: true });
+    await saveTo(typeof chosen === "string" ? chosen : null);
+  };
+
+  const saveToDownloads = async () => {
+    // `downloadDir()` throws where the OS has no such folder rather than
+    // returning null, and a rejected promise here would silently do nothing.
+    try {
+      await saveTo(await downloadDir());
+    } catch {
+      await pickDestination();
+    }
+  };
+
   return (
     <div class="flex h-full min-h-0 flex-col">
       <div class="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1.5">
-        <Button onClick={() => void pickFiles()} disabled={!canWrite()} title={t()("listing.upload_files")}>
+        {/* Disabled while any transfer is running, in either direction: the
+            device takes one session, so a second transfer would not fail — it
+            would queue behind the first and look frozen. */}
+        <Button
+          onClick={() => void pickFiles()}
+          disabled={!canWrite() || transferBusy()}
+          title={t()("listing.upload_files")}
+        >
           <span class="flex items-center gap-1">
             <Upload size={12} /> {t()("listing.upload_files")}
           </span>
         </Button>
-        <Button onClick={() => void pickFolder()} disabled={!canWrite()} title={t()("listing.upload_folder")}>
+        <Button
+          onClick={() => void pickFolder()}
+          disabled={!canWrite() || transferBusy()}
+          title={t()("listing.upload_folder")}
+        >
           <span class="flex items-center gap-1">
             <FolderUp size={12} /> {t()("listing.upload_folder")}
           </span>
@@ -119,6 +171,43 @@ const Listing: Component = () => {
             <FolderPlus size={12} /> {t()("listing.new_folder")}
           </span>
         </Button>
+
+        <span class="mx-1 h-4 w-px bg-border" />
+
+        {/* The only menu in an otherwise flat toolbar: one verb, two
+            destinations. Disabled with nothing selected, and while the device
+            is already busy with a transfer — the backend serialises on one
+            session, so a second one would not fail, it would look frozen. */}
+        <Dropdown
+          title={t()("listing.download")}
+          disabled={selection().length === 0 || transferBusy()}
+          label={
+            <span class="flex items-center gap-1">
+              <Download size={12} /> {t()("listing.download")}
+            </span>
+          }
+        >
+          {(close) => (
+            <>
+              <DropdownItem
+                onClick={() => {
+                  close();
+                  void pickDestination();
+                }}
+              >
+                {t()("listing.download_to")}
+              </DropdownItem>
+              <DropdownItem
+                onClick={() => {
+                  close();
+                  void saveToDownloads();
+                }}
+              >
+                {t()("listing.download_to_downloads")}
+              </DropdownItem>
+            </>
+          )}
+        </Dropdown>
 
         <span class="mx-1 h-4 w-px bg-border" />
 

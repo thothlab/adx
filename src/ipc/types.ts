@@ -39,15 +39,17 @@ export interface OpenedDeviceDto {
   storages: StorageDto[];
 }
 
-/** What to do with names that already exist on the device. */
+/** What to do with names that already exist in the target folder — on the
+ *  device when uploading, on this computer when downloading. */
 export type ConflictPolicy = "ask" | "replace" | "skip";
 
 /**
- * Mirrors `UploadOutcome`. A tagged union on purpose: every branch of the
- * transfer ends in exactly one of these, so the UI clears its progress state on
- * `status` alone and can never be left waiting on a job that already finished.
+ * Mirrors `UploadOutcomeDto` and `DownloadOutcomeDto`, which are the same three
+ * cases on both sides. A tagged union on purpose: every branch of a transfer
+ * ends in exactly one of these, so the UI clears its progress state on `status`
+ * alone and can never be left waiting on a job that already finished.
  */
-export type UploadOutcome =
+export type TransferOutcome =
   | { status: "conflicts"; names: string[] }
   | {
       status: "done";
@@ -60,13 +62,23 @@ export type UploadOutcome =
     }
   | { status: "cancelled"; files: number; bytes: number; warnings: string[] };
 
-/** Payload of the `upload-progress` event. */
-export interface UploadProgress {
+/** Payload of the `upload-progress` and `download-progress` events. */
+export interface TransferProgress {
   done: number;
   total: number;
   bytesDone: number;
   bytesTotal: number;
   name: string;
+}
+
+/** Mirrors `DownloadRootDto` — one row the user picked in the listing. Sent
+ *  whole rather than as a handle, so the backend does not have to re-read the
+ *  folder to learn whether it is a folder and how big it is. */
+export interface DownloadRootDto {
+  handle: string;
+  name: string;
+  isFolder: boolean;
+  size: number;
 }
 
 /** Mirrors `AdxError` in `crates/adx-core/src/error.rs`. The UI branches on

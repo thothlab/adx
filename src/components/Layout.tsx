@@ -39,6 +39,7 @@ import {
   sidebarWidth,
   treeWidth,
 } from "@/stores/panes";
+import { transferBusy, watchDownloads } from "@/stores/download";
 import { upload, watchUploads } from "@/stores/transfer";
 
 /**
@@ -79,7 +80,10 @@ const Layout: Component = () => {
         setDragging(true);
       } else if (event.payload.type === "drop") {
         setDragging(false);
-        if (canWrite()) void upload(event.payload.paths);
+        // Same rule as the toolbar: one transfer at a time, because the device
+        // has one session. A drop accepted during a running copy would sit on
+        // the lock with no visible reason.
+        if (canWrite() && !transferBusy()) void upload(event.payload.paths);
       } else {
         setDragging(false);
       }
@@ -90,7 +94,7 @@ const Layout: Component = () => {
     // runs there is no reactive owner, so `onCleanup` silently does nothing and
     // the listener survives every hot reload. Stacked drop listeners mean one
     // drag from Finder starting the same upload several times.
-    const subscriptions = [watchDevices(), watchUploads(), dragDrop];
+    const subscriptions = [watchDevices(), watchUploads(), watchDownloads(), dragDrop];
     onCleanup(() => {
       for (const pending of subscriptions) void pending.then((un) => un());
     });
@@ -217,7 +221,9 @@ const Layout: Component = () => {
         <Show when={dragging()}>
           <div class="pointer-events-none absolute inset-0 z-40 flex items-center justify-center border-2 border-dashed border-accent bg-accent/10">
             <span class="rounded bg-bg px-3 py-1.5 text-xs font-medium shadow">
-              {canWrite() ? t()("listing.drop_here") : t()("listing.drop_blocked")}
+              <Show when={!transferBusy()} fallback={t()("listing.drop_busy")}>
+                {canWrite() ? t()("listing.drop_here") : t()("listing.drop_blocked")}
+              </Show>
             </span>
           </div>
         </Show>

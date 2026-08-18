@@ -6,6 +6,7 @@
 //! reason is concrete — `mtp-rs` is at 0.30.0 and ships breaking changes every
 //! few days, so a version bump must not be able to reach the UI.
 
+mod download;
 mod error;
 mod holder;
 mod session;
@@ -13,6 +14,10 @@ mod transfer;
 mod usb;
 mod watch;
 
+pub use download::{
+    download_tree, plan_download, DownloadItem, DownloadPlan, DownloadPolicy, DownloadProgress,
+    DownloadReport, DownloadRoot, SessionSlot,
+};
 pub use error::map_error;
 pub use holder::exclusive_owner;
 pub use session::{Entry, Session, StorageRef, UploadFailure};

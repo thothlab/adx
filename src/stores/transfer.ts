@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { api, asAdxError, onUploadProgress } from "@/ipc/client";
-import type { AdxError, ConflictPolicy, UploadOutcome, UploadProgress } from "@/ipc/types";
+import type { AdxError, ConflictPolicy, TransferOutcome, TransferProgress } from "@/ipc/types";
 import { currentFolder, reloadAll, storageId } from "@/stores/browser";
 
 /**
@@ -15,8 +15,8 @@ import { currentFolder, reloadAll, storageId } from "@/stores/browser";
  */
 
 const [running, setRunning] = createSignal(false);
-const [progress, setProgress] = createSignal<UploadProgress | null>(null);
-const [summary, setSummary] = createSignal<UploadOutcome | null>(null);
+const [progress, setProgress] = createSignal<TransferProgress | null>(null);
+const [summary, setSummary] = createSignal<TransferOutcome | null>(null);
 const [uploadError, setUploadError] = createSignal<AdxError | null>(null);
 
 /** A question waiting for the user: these names already exist on the device. */

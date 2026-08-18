@@ -1,7 +1,7 @@
-import { type Component, createMemo, For, Show } from "solid-js";
-import { AlertCircle, AlertTriangle, Check, X } from "lucide-solid";
+import { type Component, createMemo, For, type JSX, Show } from "solid-js";
+import { AlertCircle, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Check, X } from "lucide-solid";
 import { t } from "@/i18n";
-import type { UploadOutcome } from "@/ipc/types";
+import type { AdxError, TransferOutcome, TransferProgress } from "@/ipc/types";
 import { formatBytes, fraction } from "@/lib/format";
 import { Button, Modal } from "@/components/Modal";
 import {
@@ -15,27 +15,121 @@ import {
   summary,
   uploadError,
 } from "@/stores/transfer";
+import {
+  cancelConflicts as cancelDownloadConflicts,
+  cancelDownload,
+  conflicts as downloadConflicts,
+  dismissSummary as dismissDownloadSummary,
+  downloadError,
+  progress as downloadProgress,
+  resolveConflicts as resolveDownloadConflicts,
+  running as downloading,
+  summary as downloadSummary,
+} from "@/stores/download";
 
 /**
  * The operations panel: what is running, what just finished, and what went
- * wrong.
+ * wrong — in both directions.
  *
  * A finished transfer stays on screen until dismissed. A copy that reports
  * nothing when it ends is indistinguishable from one that silently did less
  * than asked — and this one legitimately can do less than asked (skipped
- * conflicts, unfollowed symlinks), so it has to say so.
+ * conflicts, unfollowed symlinks, names the target filesystem cannot store), so
+ * it has to say so.
+ *
+ * Both directions are rendered by the same `Track`, from the same three
+ * signals. Only one of them can be active at a time — the backend serialises on
+ * a single MTP session — but they are shown as separate rows anyway, because
+ * the summary of the copy that just finished must not be replaced by the one
+ * starting in the other direction.
  */
 const Jobs: Component = () => (
   <div class="space-y-2 p-2 text-xs">
-    <Show when={progress()}>
+    <Track
+      icon={<ArrowUpFromLine size={12} class="shrink-0 text-fg-muted" />}
+      label={t()("jobs.to_device")}
+      progress={progress()}
+      summary={summary()}
+      error={uploadError()}
+      running={running()}
+      onCancel={() => void cancelUpload()}
+      onDismiss={dismissSummary}
+    />
+
+    <Track
+      icon={<ArrowDownToLine size={12} class="shrink-0 text-fg-muted" />}
+      label={t()("jobs.to_computer")}
+      progress={downloadProgress()}
+      summary={downloadSummary()}
+      error={downloadError()}
+      running={downloading()}
+      onCancel={() => void cancelDownload()}
+      onDismiss={dismissDownloadSummary}
+    />
+
+    <Show
+      when={
+        !running() &&
+        !downloading() &&
+        !summary() &&
+        !downloadSummary() &&
+        !uploadError() &&
+        !downloadError()
+      }
+    >
+      <div class="text-fg-muted">{t()("jobs.empty")}</div>
+    </Show>
+
+    <Show when={conflicts()}>
+      {(pending) => (
+        <ConflictDialog
+          title={t()("dialog.conflict_title")}
+          body={t()("dialog.conflict_body", { count: pending().names.length })}
+          names={pending().names}
+          onReplace={() => void resolveConflicts("replace")}
+          onSkip={() => void resolveConflicts("skip")}
+          onCancel={cancelConflicts}
+        />
+      )}
+    </Show>
+
+    <Show when={downloadConflicts()}>
+      {(pending) => (
+        <ConflictDialog
+          title={t()("dialog.conflict_title_local")}
+          body={t()("dialog.conflict_body_local", { count: pending().names.length })}
+          names={pending().names}
+          onReplace={() => void resolveDownloadConflicts("replace")}
+          onSkip={() => void resolveDownloadConflicts("skip")}
+          onCancel={cancelDownloadConflicts}
+        />
+      )}
+    </Show>
+  </div>
+);
+
+/** One direction's row: progress while it runs, then its result. */
+const Track: Component<{
+  icon: JSX.Element;
+  label: string;
+  progress: TransferProgress | null;
+  summary: TransferOutcome | null;
+  error: AdxError | null;
+  running: boolean;
+  onCancel: () => void;
+  onDismiss: () => void;
+}> = (props) => (
+  <>
+    <Show when={props.progress}>
       {(p) => (
         <div class="space-y-1">
           <div class="flex items-center gap-2">
+            {props.icon}
             <span class="min-w-0 flex-1 truncate">{p().name || t()("jobs.preparing")}</span>
             <span class="shrink-0 tabular-nums text-fg-muted">
               {p().done}/{p().total}
             </span>
-            <Button onClick={() => void cancelUpload()}>{t()("jobs.cancel")}</Button>
+            <Button onClick={props.onCancel}>{t()("jobs.cancel")}</Button>
           </div>
           <div class="h-1.5 w-full overflow-hidden rounded-full bg-bg-subtle">
             <div
@@ -50,7 +144,7 @@ const Jobs: Component = () => (
       )}
     </Show>
 
-    <Show when={uploadError()}>
+    <Show when={props.error}>
       {(err) => (
         <div class="flex items-start gap-2 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
           <AlertCircle size={13} class="mt-0.5 shrink-0" />
@@ -58,34 +152,27 @@ const Jobs: Component = () => (
             <div class="font-medium">{t()(`errors.${err().kind}`)}</div>
             <div class="break-words opacity-80">{err().message}</div>
           </div>
-          <button class="shrink-0 opacity-60 hover:opacity-100" onClick={dismissSummary}>
+          <button class="shrink-0 opacity-60 hover:opacity-100" onClick={props.onDismiss}>
             <X size={12} />
           </button>
         </div>
       )}
     </Show>
 
-    <Show when={summary()}>{(outcome) => <Summary outcome={outcome()} />}</Show>
-
-    <Show when={running() && !progress()}>
-      <div class="text-fg-muted">{t()("jobs.preparing")}</div>
+    <Show when={props.summary}>
+      {(outcome) => <Summary outcome={outcome()} onDismiss={props.onDismiss} />}
     </Show>
 
-    <Show when={!running() && !progress() && !summary() && !uploadError()}>
-      <div class="text-fg-muted">{t()("jobs.empty")}</div>
+    {/* The gap between "started" and the first progress event is the device
+        walk, which on a large folder is seconds. Silence there reads as a
+        button that did nothing. */}
+    <Show when={props.running && !props.progress}>
+      <div class="flex items-center gap-2 text-fg-muted">
+        {props.icon}
+        {t()("jobs.preparing")}
+      </div>
     </Show>
-
-    <Show when={conflicts()}>
-      {(pending) => (
-        <ConflictDialog
-          names={pending().names}
-          onReplace={() => void resolveConflicts("replace")}
-          onSkip={() => void resolveConflicts("skip")}
-          onCancel={cancelConflicts}
-        />
-      )}
-    </Show>
-  </div>
+  </>
 );
 
 /**
@@ -96,7 +183,7 @@ const Jobs: Component = () => (
  * does not keep TypeScript's narrowing across two reads — which is how a
  * "cancelled" result ends up rendered through the "done" branch.
  */
-const Summary: Component<{ outcome: UploadOutcome }> = (props) => {
+const Summary: Component<{ outcome: TransferOutcome; onDismiss: () => void }> = (props) => {
   const view = createMemo(() => {
     const o = props.outcome;
     if (o.status === "done") {
@@ -134,7 +221,7 @@ const Summary: Component<{ outcome: UploadOutcome }> = (props) => {
           </ul>
         </Show>
       </div>
-      <button class="shrink-0 opacity-60 hover:opacity-100" onClick={dismissSummary}>
+      <button class="shrink-0 opacity-60 hover:opacity-100" onClick={() => props.onDismiss()}>
         <X size={12} />
       </button>
     </div>
@@ -143,17 +230,20 @@ const Summary: Component<{ outcome: UploadOutcome }> = (props) => {
 
 /**
  * Three answers, not two: replacing and skipping are both reasonable and
- * neither is safe to assume. Nothing has been written to the device at the
- * moment this appears, so "cancel" really does leave the phone untouched.
+ * neither is safe to assume. Nothing has been written at the moment this
+ * appears — on either side — so "cancel" really does leave both machines
+ * untouched.
  */
 const ConflictDialog: Component<{
+  title: string;
+  body: string;
   names: string[];
   onReplace: () => void;
   onSkip: () => void;
   onCancel: () => void;
 }> = (props) => (
   <Modal
-    title={t()("dialog.conflict_title")}
+    title={props.title}
     onClose={props.onCancel}
     footer={
       <>
@@ -165,7 +255,7 @@ const ConflictDialog: Component<{
       </>
     }
   >
-    <p>{t()("dialog.conflict_body", { count: props.names.length })}</p>
+    <p>{props.body}</p>
     <ul class="mt-2 max-h-40 overflow-auto rounded border border-border bg-bg-subtle p-2 font-mono text-xs">
       <For each={props.names}>{(n) => <li class="truncate">{n}</li>}</For>
     </ul>

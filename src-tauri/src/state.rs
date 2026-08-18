@@ -11,13 +11,19 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use adx_mtp::Session;
-use tokio::sync::Mutex;
+use adx_mtp::SessionSlot;
 
 #[derive(Default)]
 pub struct AppState {
-    pub session: Mutex<Option<Session>>,
-    /// Set by `upload_cancel`, read by the transfer loop. An `Arc` because the
-    /// progress callback handed to `mtp-rs` outlives the borrow of state.
+    /// The one open device. A download borrows this per read window rather than
+    /// for its whole run, which is what keeps the tree and the listing usable
+    /// while a large file is coming off the phone — see `adx_mtp::download`.
+    pub session: SessionSlot,
+    /// Set by `upload_cancel` / `download_cancel`, read by the transfer loops.
+    /// One flag for both directions because the session mutex already makes
+    /// them mutually exclusive: a second transfer cannot start while the first
+    /// holds the device, so there is never a second one to cancel by mistake.
+    /// An `Arc` because the progress callback handed to `mtp-rs` outlives the
+    /// borrow of state.
     pub cancel: Arc<AtomicBool>,
 }

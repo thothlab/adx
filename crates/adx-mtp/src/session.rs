@@ -15,7 +15,7 @@ use std::ops::ControlFlow;
 use std::path::Path;
 
 use adx_core::{AdxError, ErrorKind};
-use mtp_rs::mtp::{MtpDevice, NewObjectInfo, ObjectHandle, Storage};
+use mtp_rs::mtp::{MtpDevice, NewObjectInfo, ObjectHandle, Storage, WindowedDownload};
 
 use crate::{map_error, MtpBackend, MtpRsBackend};
 
@@ -269,6 +269,47 @@ impl Session {
                 error: map_error(&e.source),
                 partial: e.partial.map(|h| h.0),
             })
+    }
+
+    /// Start reading an object as a sequence of bounded windows.
+    ///
+    /// `pub(crate)` on purpose: the returned type is `mtp-rs`'s, and the rule
+    /// this crate exists to enforce is that no signature above it names a
+    /// library type. The public way in is [`crate::download_tree`].
+    ///
+    /// The reader that comes back owns its own handle on the transport and
+    /// borrows nothing from this session, which is what lets the caller drop
+    /// the session lock between two windows — see the module docs of
+    /// `download.rs` for why that is the whole point.
+    pub(crate) async fn open_download(
+        &self,
+        storage_id: u64,
+        handle: u64,
+    ) -> Result<WindowedDownload, AdxError> {
+        let storage = self.storage(storage_id)?;
+        storage
+            .download_windowed_default(ObjectHandle(handle))
+            .await
+            .map_err(|e| map_error(&e))
+    }
+
+    /// Read a bounded slice of an object into memory.
+    ///
+    /// For previews and thumbnails, where the whole point is to read the first
+    /// N bytes and stop. A whole-file read goes through [`crate::download_tree`]
+    /// instead, which streams to disk and can be cancelled.
+    pub async fn read_range(
+        &self,
+        storage_id: u64,
+        handle: u64,
+        offset: u64,
+        len: u32,
+    ) -> Result<Vec<u8>, AdxError> {
+        let storage = self.storage(storage_id)?;
+        storage
+            .read_range(ObjectHandle(handle), offset, len)
+            .await
+            .map_err(|e| map_error(&e))
     }
 
     /// Close the session cleanly. Worth awaiting rather than dropping: an

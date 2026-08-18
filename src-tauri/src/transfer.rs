@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use adx_core::{plan_upload, AdxError, ErrorKind};
-use adx_mtp::{ConflictPolicy, UploadReport};
+use adx_mtp::{ConflictPolicy, DownloadPolicy, DownloadReport, DownloadRoot, UploadReport};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
@@ -27,9 +27,10 @@ use crate::state::AppState;
 /// second.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(120);
 
-/// Plain identifier, no scheme punctuation: Tauri validates event names and a
+/// Plain identifiers, no scheme punctuation: Tauri validates event names and a
 /// rejected one fails at emit time, in a background task, where nobody sees it.
 pub const PROGRESS_EVENT: &str = "upload-progress";
+pub const DOWNLOAD_PROGRESS_EVENT: &str = "download-progress";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -172,6 +173,165 @@ pub fn upload_cancel(state: State<'_, AppState>) {
     state.cancel.store(true, Ordering::SeqCst);
 }
 
+/// One object the user selected in the listing, on its way to the computer.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadRootDto {
+    pub handle: String,
+    pub name: String,
+    pub is_folder: bool,
+    pub size: u64,
+}
+
+/// Same three terminal states as an upload, and the same reason for the tag:
+/// the frontend clears its progress row on `status` alone, so a cancel must
+/// never serialise into something that reads as success.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum DownloadOutcomeDto {
+    Conflicts {
+        names: Vec<String>,
+    },
+    Done {
+        files: usize,
+        folders: usize,
+        replaced: usize,
+        skipped: usize,
+        bytes: u64,
+        warnings: Vec<String>,
+    },
+    Cancelled {
+        files: usize,
+        bytes: u64,
+        warnings: Vec<String>,
+    },
+}
+
+impl From<DownloadReport> for DownloadOutcomeDto {
+    fn from(r: DownloadReport) -> Self {
+        match r {
+            DownloadReport::Conflicts { names } => Self::Conflicts { names },
+            DownloadReport::Done { files, folders, replaced, skipped, bytes, warnings } => {
+                Self::Done { files, folders, replaced, skipped, bytes, warnings }
+            }
+            DownloadReport::Cancelled { files, bytes, warnings } => {
+                Self::Cancelled { files, bytes, warnings }
+            }
+        }
+    }
+}
+
+impl From<PolicyDto> for DownloadPolicy {
+    fn from(p: PolicyDto) -> Self {
+        match p {
+            PolicyDto::Ask => DownloadPolicy::Ask,
+            PolicyDto::Replace => DownloadPolicy::Replace,
+            PolicyDto::Skip => DownloadPolicy::Skip,
+        }
+    }
+}
+
+/// Copy selected files and folders from the device into a folder on this
+/// computer.
+///
+/// Note what this command does *not* do: it never takes the session lock
+/// itself. The executor takes it per read window and releases it in between, so
+/// while this command is running the folder tree and the listing keep working —
+/// which is the one behaviour a user notices about a file manager that moves
+/// gigabytes.
+#[tauri::command]
+pub async fn download_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    storage_id: String,
+    roots: Vec<DownloadRootDto>,
+    dest: String,
+    policy: PolicyDto,
+) -> Result<DownloadOutcomeDto, AdxError> {
+    let storage = token(&storage_id)?;
+    let roots: Vec<DownloadRoot> = roots
+        .into_iter()
+        .map(|r| {
+            Ok(DownloadRoot {
+                handle: token(&r.handle)?,
+                name: r.name,
+                is_folder: r.is_folder,
+                size: r.size,
+            })
+        })
+        .collect::<Result<_, AdxError>>()?;
+
+    // Pinned before the walk starts, so every later re-acquire can tell "the
+    // same phone" from "a phone".
+    let serial = {
+        let guard = state.session.lock().await;
+        guard
+            .as_ref()
+            .ok_or_else(|| AdxError::new(ErrorKind::NoDevice, "устройство не открыто"))?
+            .serial()
+            .to_string()
+    };
+
+    let cancel = Arc::clone(&state.cancel);
+    cancel.store(false, Ordering::SeqCst);
+
+    // Walking a folder tree is thousands of listings, so a cancel has to be
+    // honoured here too — not only once bytes are moving. It comes back as an
+    // error kind and is turned into the terminal `Cancelled` report right away.
+    let plan = match adx_mtp::plan_download(&state.session, &serial, storage, &roots, || {
+        cancel.load(Ordering::Relaxed)
+    })
+    .await
+    {
+        Ok(plan) => plan,
+        Err(e) if e.kind == ErrorKind::Cancelled => {
+            return Ok(DownloadOutcomeDto::Cancelled { files: 0, bytes: 0, warnings: vec![] })
+        }
+        Err(e) => return Err(e),
+    };
+
+    let mut last = Instant::now();
+    let mut last_done = usize::MAX;
+    let report = adx_mtp::download_tree(
+        &state.session,
+        &serial,
+        storage,
+        &plan,
+        std::path::Path::new(&dest),
+        policy.into(),
+        |p| {
+            // Same rule as the upload side: a file boundary always gets
+            // through, everything else is throttled.
+            let boundary = p.done != last_done;
+            if boundary || last.elapsed() >= PROGRESS_INTERVAL {
+                last = Instant::now();
+                last_done = p.done;
+                let _ = app.emit(
+                    DOWNLOAD_PROGRESS_EVENT,
+                    ProgressDto {
+                        done: p.done,
+                        total: p.total,
+                        bytes_done: p.bytes_done,
+                        bytes_total: p.bytes_total,
+                        name: p.name,
+                    },
+                );
+            }
+        },
+        || cancel.load(Ordering::Relaxed),
+    )
+    .await?;
+
+    Ok(report.into())
+}
+
+/// Ask the running download to stop. Same flag as the upload, same reason for
+/// not touching the session mutex.
+#[tauri::command]
+pub fn download_cancel(state: State<'_, AppState>) {
+    state.cancel.store(true, Ordering::SeqCst);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,6 +363,49 @@ mod tests {
         assert!(serde_json::to_string(&conflicts)
             .unwrap()
             .contains("\"status\":\"conflicts\""));
+    }
+
+    /// The download union is checked separately rather than assumed identical:
+    /// the two directions serialise through different types, and a tag that
+    /// only the upload side got right would leave a download's progress row
+    /// pinned forever.
+    #[test]
+    fn download_outcomes_carry_the_same_discriminating_tag() {
+        let cancelled: DownloadOutcomeDto =
+            DownloadReport::Cancelled { files: 2, bytes: 10, warnings: vec![] }.into();
+        assert!(serde_json::to_string(&cancelled)
+            .unwrap()
+            .contains("\"status\":\"cancelled\""));
+
+        let conflicts: DownloadOutcomeDto =
+            DownloadReport::Conflicts { names: vec!["a".into()] }.into();
+        assert!(serde_json::to_string(&conflicts)
+            .unwrap()
+            .contains("\"status\":\"conflicts\""));
+
+        let done: DownloadOutcomeDto = DownloadReport::Done {
+            files: 1,
+            folders: 0,
+            replaced: 0,
+            skipped: 0,
+            bytes: 10,
+            warnings: vec![],
+        }
+        .into();
+        assert!(serde_json::to_string(&done).unwrap().contains("\"status\":\"done\""));
+    }
+
+    /// The listing sends handles as strings — a u64 does not survive a JSON
+    /// number — and sizes as numbers. A DTO that got that backwards would
+    /// address the wrong object on a device with high handles.
+    #[test]
+    fn a_download_root_arrives_with_a_string_handle() {
+        let dto: DownloadRootDto = serde_json::from_str(
+            r#"{"handle":"18446744073709551615","name":"DCIM","isFolder":true,"size":0}"#,
+        )
+        .unwrap();
+        assert_eq!(token(&dto.handle).unwrap(), u64::MAX);
+        assert!(dto.is_folder);
     }
 
     #[test]

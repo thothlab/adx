@@ -13,7 +13,9 @@ serde.workspace = true
 tracing.workspace = true
 mtp-rs.workspace = true
 futures.workspace = true
-tokio.workspace = true
+# `io-util` on top of the workspace set: the download executor writes each
+# window to disk with `AsyncWriteExt::write_all`, which lives behind it.
+tokio = { workspace = true, features = ["io-util"] }
 
 # Bridges a `tokio::fs::File` to the `Stream<Item = Result<Bytes, io::Error>>`
 # that `Storage::upload` wants. Streaming rather than reading the file in:
