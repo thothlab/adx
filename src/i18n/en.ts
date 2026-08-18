@@ -76,6 +76,13 @@ const en = {
     drop_blocked: "Open a writable folder on the device first",
     drop_busy: "Wait for the running transfer to finish",
   },
+  preview: {
+    loading: "Reading from the device…",
+    unsupported: "There is no preview for this kind of file — copy it to the computer to open it.",
+    too_big: "Too large to preview (over {{size}}) — copy it to the computer instead.",
+    truncated: "Showing the first {{size}} — the file is longer.",
+    no_pdf_viewer: "This system cannot show a PDF here — copy the file to the computer.",
+  },
   jobs: {
     title: "Operations",
     empty: "No operations running",
@@ -91,6 +98,7 @@ const en = {
   },
   dialog: {
     cancel: "Cancel",
+    close: "Close",
     create: "Create",
     rename: "Rename",
     name_label: "Name",

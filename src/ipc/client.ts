@@ -38,6 +38,11 @@ export const api = {
       invoke<void>("entry_delete", { storageId, handle }),
     rename: (storageId: string, handle: string, name: string) =>
       invoke<void>("entry_rename", { storageId, handle, name }),
+    /** First `maxBytes` of a file, raw. The command answers with a Tauri
+     *  `Response`, which crosses the bridge as an `ArrayBuffer` rather than as
+     *  a JSON array of numbers — six times the size and parsed as text. */
+    read: (storageId: string, handle: string, maxBytes: number) =>
+      invoke<ArrayBuffer>("entry_read", { storageId, handle, maxBytes }),
   },
   upload: {
     start: (storageId: string, parent: string | null, paths: string[], policy: ConflictPolicy) =>

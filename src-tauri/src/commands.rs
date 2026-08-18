@@ -245,6 +245,41 @@ pub async fn entry_delete(
     session.delete(token(&storage_id)?, token(&handle)?).await
 }
 
+/// How much of a file the preview is allowed to pull off the device.
+///
+/// A cap rather than a whole-file read, and enforced on this side as well as in
+/// the UI: a preview is a glance, and reading a 4 GB video into the webview to
+/// decide it cannot be shown would take minutes and then fail on memory. The
+/// frontend checks the size before asking and offers a download instead; this
+/// is the backstop for the case where the listing's size was stale.
+const PREVIEW_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// Read the first `max_bytes` of an object for a preview.
+///
+/// Returns the bytes raw. A `Vec<u8>` from a Tauri command serialises as a JSON
+/// array of numbers — roughly six bytes of JSON per byte of file, parsed by the
+/// webview's JSON reader — which turns a 5 MB photo into 30 MB of text. The
+/// `Response` path hands the buffer over as an `ArrayBuffer` instead.
+#[tauri::command]
+pub async fn entry_read(
+    state: State<'_, AppState>,
+    storage_id: String,
+    handle: String,
+    max_bytes: u64,
+) -> Result<tauri::ipc::Response, AdxError> {
+    let want = max_bytes.min(PREVIEW_LIMIT);
+    let want = u32::try_from(want)
+        .map_err(|_| AdxError::new(ErrorKind::Unsupported, "слишком большой запрос"))?;
+
+    let guard = state.session.lock().await;
+    let session = guard.as_ref().ok_or_else(no_device)?;
+    let bytes = session
+        .read_range(token(&storage_id)?, token(&handle)?, 0, want)
+        .await?;
+
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[tauri::command]
 pub async fn entry_rename(
     state: State<'_, AppState>,

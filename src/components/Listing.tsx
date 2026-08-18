@@ -15,10 +15,12 @@ import {
   Upload,
 } from "lucide-solid";
 import { t } from "@/i18n";
+import type { EntryDto } from "@/ipc/types";
 import { formatBytes } from "@/lib/format";
 import { afterClick, EMPTY_SELECTION, selectAll, type Selection } from "@/lib/selection";
 import { Dropdown, DropdownItem } from "@/components/Dropdown";
 import { Button, ConfirmModal, PromptModal } from "@/components/Modal";
+import Preview from "@/components/Preview";
 import { download, transferBusy } from "@/stores/download";
 import {
   browseError,
@@ -52,6 +54,7 @@ const Listing: Component = () => {
   const [renaming, setRenaming] = createSignal<{ handle: string; name: string } | null>(null);
   const [creating, setCreating] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
+  const [previewing, setPreviewing] = createSignal<EntryDto | null>(null);
 
   const picked = () => rows().picked;
   const handles = () => entries().map((e) => e.handle);
@@ -343,6 +346,13 @@ const Listing: Component = () => {
                           // the selection here; entering the folder clears it,
                           // and the folder-change effect clears the anchor.
                           void enterFolder(entry.handle, entry.name);
+                        } else {
+                          // Opened for every file, not only the ones with a
+                          // preview: the modal itself says "no preview for
+                          // this, copy it instead". A double-click that does
+                          // nothing at all is indistinguishable from one the
+                          // app failed to notice.
+                          setPreviewing(entry);
                         }
                       }}
                     >
@@ -401,6 +411,19 @@ const Listing: Component = () => {
               void renameEntry(handle, name);
             }}
           />
+        )}
+      </Show>
+
+      {/* Keyed on the storage as well as the entry: object handles are only
+          unique within a device's own numbering, so the same handle on another
+          storage names another file. */}
+      <Show when={previewing()}>
+        {(entry) => (
+          <Show when={storageId()}>
+            {(id) => (
+              <Preview entry={entry()} storageId={id()} onClose={() => setPreviewing(null)} />
+            )}
+          </Show>
         )}
       </Show>
 

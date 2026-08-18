@@ -56,6 +56,7 @@ pub fn run() {
             commands::folder_create,
             commands::entry_delete,
             commands::entry_rename,
+            commands::entry_read,
             transfer::upload_start,
             transfer::upload_cancel,
             transfer::download_start,
