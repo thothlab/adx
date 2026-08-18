@@ -62,6 +62,68 @@ const Panel: Component<{
   </section>
 );
 
+/**
+ * Theme and language, at the foot of the sidebar.
+ *
+ * Both are set once and then forgotten, so they sit where a settings row
+ * belongs — pinned to the bottom of the panel, below the content that changes —
+ * rather than in the header, which is reserved for what acts on the device.
+ *
+ * `shrink-0` and no scroll container: this is a fixed two-row strip. Inside the
+ * scrolling panel above it, a long device list would push it out of reach.
+ */
+const SettingsFooter: Component = () => {
+  const themeName = () =>
+    t()(
+      theme() === "dark"
+        ? "settings.theme_dark"
+        : theme() === "light"
+          ? "settings.theme_light"
+          : "settings.theme_system",
+    );
+
+  return (
+    <div class="shrink-0 border-t border-border py-1">
+      {/* One button for the whole row, not an icon with a label beside it: the
+          row is the target, which is what makes a 13px icon clickable. */}
+      <button
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-bg-muted"
+        title={t()("settings.theme")}
+        onClick={() => cycleTheme()}
+      >
+        <Show when={theme() !== "system"} fallback={<SunMoon size={13} class="shrink-0 text-fg-muted" />}>
+          <Show when={theme() === "dark"} fallback={<Sun size={13} class="shrink-0 text-fg-muted" />}>
+            <Moon size={13} class="shrink-0 text-fg-muted" />
+          </Show>
+        </Show>
+        <span class="min-w-0 flex-1 truncate">{t()("settings.theme")}</span>
+        <span class="shrink-0 text-fg-muted">{themeName()}</span>
+      </button>
+
+      <div class="flex w-full items-center gap-2 px-3 py-1.5 text-xs">
+        <Languages size={13} class="shrink-0 text-fg-muted" />
+        <span class="min-w-0 flex-1 truncate">{t()("settings.language")}</span>
+        <span class="flex shrink-0 items-center gap-1">
+          <For each={LOCALES}>
+            {(l) => (
+              <button
+                class="rounded px-1 hover:bg-bg-muted"
+                classList={{
+                  "text-accent font-medium": locale() === l.code,
+                  "text-fg-muted": locale() !== l.code,
+                }}
+                onClick={() => setLocale(l.code)}
+              >
+                {l.code.toUpperCase()}
+              </button>
+            )}
+          </For>
+        </span>
+      </div>
+    </div>
+  );
+};
+
 const Layout: Component = () => {
   const [dragging, setDragging] = createSignal(false);
 
@@ -125,44 +187,20 @@ const Layout: Component = () => {
           <span class="text-xs text-fg-muted">{t()("app.tagline")}</span>
         </div>
 
-        <div class="flex items-center gap-1">
-          <button
-            class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs hover:bg-bg-muted disabled:opacity-50"
-            title={t()("devices.refresh")}
-            disabled={loading()}
-            onClick={() => void refreshDevices()}
-          >
-            <RefreshCw size={12} class={loading() ? "animate-spin" : undefined} />{" "}
-            {t()("devices.refresh")}
-          </button>
-
-          <button
-            class="inline-flex items-center rounded border border-border px-2 py-1 text-xs hover:bg-bg-muted"
-            title={t()("settings.theme")}
-            onClick={() => cycleTheme()}
-          >
-            <Show when={theme() !== "system"} fallback={<SunMoon size={14} />}>
-              <Show when={theme() === "dark"} fallback={<Sun size={14} />}>
-                <Moon size={14} />
-              </Show>
-            </Show>
-          </button>
-
-          <div class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs">
-            <Languages size={12} />
-            <For each={LOCALES}>
-              {(l) => (
-                <button
-                  class="rounded px-1 hover:bg-bg-muted"
-                  classList={{ "text-accent font-medium": locale() === l.code }}
-                  onClick={() => setLocale(l.code)}
-                >
-                  {l.code.toUpperCase()}
-                </button>
-              )}
-            </For>
-          </div>
-        </div>
+        {/* Refresh stays in the header: it acts on the device list, which is
+            what the window is about. Theme and language moved to the foot of
+            the sidebar — they are settings, touched once and then never, and a
+            control that competes for the top-right corner with the one action
+            the user actually repeats has the priorities backwards. */}
+        <button
+          class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs hover:bg-bg-muted disabled:opacity-50"
+          title={t()("devices.refresh")}
+          disabled={loading()}
+          onClick={() => void refreshDevices()}
+        >
+          <RefreshCw size={12} class={loading() ? "animate-spin" : undefined} />{" "}
+          {t()("devices.refresh")}
+        </button>
       </header>
 
       {/* Columns are px values from the pane store rather than Tailwind classes,
@@ -191,6 +229,8 @@ const Layout: Component = () => {
           <Panel title={t()("storages.title")} icon={<HardDrive size={13} />} class="flex-1">
             <StorageList />
           </Panel>
+
+          <SettingsFooter />
         </div>
 
         <Splitter
