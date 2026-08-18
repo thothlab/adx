@@ -26,9 +26,19 @@ import DeviceList from "@/components/DeviceList";
 import FolderTree from "@/components/FolderTree";
 import Jobs from "@/components/Jobs";
 import Listing from "@/components/Listing";
+import Splitter from "@/components/Splitter";
 import StorageList from "@/components/StorageList";
 import { devices, error, loading, refreshDevices, selectDevice, selected, watchDevices } from "@/stores/devices";
 import { canWrite, closeDevice, openDevice } from "@/stores/browser";
+import {
+  resetSidebarWidth,
+  resetTreeWidth,
+  resizing,
+  setSidebarWidth,
+  setTreeWidth,
+  sidebarWidth,
+  treeWidth,
+} from "@/stores/panes";
 import { upload, watchUploads } from "@/stores/transfer";
 
 /**
@@ -145,8 +155,16 @@ const Layout: Component = () => {
         </div>
       </header>
 
-      <div class="relative grid min-h-0 flex-1 grid-cols-[15rem_15rem_1fr]">
-        <div class="flex min-h-0 flex-col border-r border-border">
+      {/* Columns are px values from the pane store rather than Tailwind classes,
+          because a dragged width is a number that changes 60 times a second —
+          and `select-none` is on for the duration of a drag so the pointer
+          crossing the listing does not paint a text selection over it. */}
+      <div
+        class="relative grid min-h-0 flex-1"
+        classList={{ "select-none": resizing() }}
+        style={{ "grid-template-columns": `${sidebarWidth()}px 1px ${treeWidth()}px 1px 1fr` }}
+      >
+        <div class="flex min-h-0 flex-col">
           <Panel
             title={t()("devices.title")}
             icon={<Smartphone size={13} />}
@@ -165,9 +183,23 @@ const Layout: Component = () => {
           </Panel>
         </div>
 
-        <Panel title={t()("tree.title")} class="border-r border-border">
+        <Splitter
+          width={sidebarWidth()}
+          onResize={setSidebarWidth}
+          onReset={resetSidebarWidth}
+          label={t()("devices.title")}
+        />
+
+        <Panel title={t()("tree.title")}>
           <FolderTree />
         </Panel>
+
+        <Splitter
+          width={treeWidth()}
+          onResize={setTreeWidth}
+          onReset={resetTreeWidth}
+          label={t()("tree.title")}
+        />
 
         <div class="flex min-h-0 flex-col">
           <section class="min-h-0 flex-1">
