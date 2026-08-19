@@ -26,6 +26,18 @@
 //! The cap is also what keeps the device usable during playback. Each chunk is
 //! one short read holding the session, on the same rule as the download
 //! executor — the tree and the listing keep working while a video plays.
+//!
+//! # The exclusion with transfers is one-directional, on purpose
+//!
+//! A request arriving while a transfer runs is refused (see `transferring`
+//! below). The reverse is *not* blocked: a download may start while media is
+//! playing, and the frontend does not know a player exists. The asymmetry is
+//! deliberate rather than an oversight, because the two failure modes are not
+//! alike. A transfer interrupted or slowed by playback is a job the user is
+//! waiting on getting slower for no visible reason; playback slowed by a
+//! transfer just stutters, and the next range request still arrives — one
+//! window later. Degrading is an acceptable answer for a player and not for a
+//! copy, so only the copy gets protected.
 
 use std::sync::atomic::Ordering;
 

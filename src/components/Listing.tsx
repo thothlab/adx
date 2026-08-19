@@ -56,6 +56,11 @@ import { upload } from "@/stores/transfer";
  * `py-1` plus the line height: the filler below the table paints its stripes
  * with a gradient, and a gradient whose period disagrees with the real row
  * height produces stripes that visibly change thickness at the last row.
+ *
+ * The number alone is not the whole guarantee. A height on a `<tr>` is a
+ * *minimum*, so this holds only while a row is one line — which it is, because
+ * every cell truncates rather than wraps. Give a row a second line and the
+ * stripes below the table will no longer match the ones above it.
  */
 const ROW_H = 24;
 
