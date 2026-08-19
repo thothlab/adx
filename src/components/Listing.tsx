@@ -49,12 +49,50 @@ import { upload } from "@/stores/transfer";
  * Downloads folder. Two top-level buttons for the same verb would read as two
  * features rather than one.
  */
+/**
+ * Height of one row, in px, and the period of the striping below the last one.
+ *
+ * One number rather than two, and set on the row explicitly rather than left to
+ * `py-1` plus the line height: the filler below the table paints its stripes
+ * with a gradient, and a gradient whose period disagrees with the real row
+ * height produces stripes that visibly change thickness at the last row.
+ */
+const ROW_H = 24;
+
+/**
+ * The striped area below the last row, as in Finder.
+ *
+ * Its phase is not guessed — it starts exactly where the table ends, so its
+ * first band is simply the colour row number `count` would have had. That is
+ * why this can be a gradient at all: it never has to line up with anything
+ * above it, only continue the rhythm.
+ */
+const StripeFiller: Component<{ count: number; onClick: () => void }> = (props) => {
+  const tint = "rgb(var(--bg-subtle))";
+  const plain = "transparent";
+  const first = () => (props.count % 2 === 1 ? tint : plain);
+  const second = () => (props.count % 2 === 1 ? plain : tint);
+
+  return (
+    <div
+      class="min-h-0 flex-1"
+      style={{
+        "background-image": `repeating-linear-gradient(to bottom, ${first()} 0, ${first()} ${ROW_H}px, ${second()} ${ROW_H}px, ${second()} ${ROW_H * 2}px)`,
+      }}
+      onClick={() => props.onClick()}
+    />
+  );
+};
+
 const Listing: Component = () => {
   const [rows, setRows] = createSignal<Selection>(EMPTY_SELECTION);
   const [renaming, setRenaming] = createSignal<{ handle: string; name: string } | null>(null);
   const [creating, setCreating] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
-  const [previewing, setPreviewing] = createSignal<EntryDto | null>(null);
+  /** Handle of the row the preview is showing, or `null` when it is closed.
+   *  A handle rather than the row itself, so a listing refresh under an open
+   *  preview resolves to the fresh row instead of pinning a stale copy. */
+  const [previewing, setPreviewing] = createSignal<string | null>(null);
 
   const picked = () => rows().picked;
   const handles = () => entries().map((e) => e.handle);
@@ -133,6 +171,38 @@ const Listing: Component = () => {
   const pickDestination = async () => {
     const chosen = await open({ multiple: false, directory: true });
     await saveTo(typeof chosen === "string" ? chosen : null);
+  };
+
+  /**
+   * Paging in the preview walks files, skipping folders — a folder has nothing
+   * to show, and stepping onto one would turn the chevron into a dead end in
+   * the middle of a run.
+   *
+   * Non-previewable files are *not* skipped. The modal says "no preview for
+   * this" for them, which is information; skipping would move the cursor past
+   * rows the user is watching go by, and they would lose their place.
+   */
+  const files = createMemo(() => entries().filter((e) => !e.isFolder));
+  const previewIndex = () => files().findIndex((e) => e.handle === previewing());
+  const previewEntry = () => files()[previewIndex()];
+
+  /**
+   * Step the preview, and move the selection with it.
+   *
+   * The selection following is the point, not a side effect: closing the modal
+   * has to leave the cursor on the file the user was last looking at, so that
+   * Copy to computer or Delete acts on it without hunting for the row again.
+   */
+  const stepPreview = (delta: number) => {
+    const next = files()[previewIndex() + delta];
+    if (!next) return;
+    setPreviewing(next.handle);
+    setRows({ picked: new Set([next.handle]), anchor: next.handle });
+  };
+
+  const openPreview = (entry: EntryDto) => {
+    setPreviewing(entry.handle);
+    setRows({ picked: new Set([entry.handle]), anchor: entry.handle });
   };
 
   const saveToDownloads = async () => {
@@ -289,7 +359,7 @@ const Listing: Component = () => {
           browser's text-extend on mousedown and paints a blue smear across the
           rows instead of selecting them. */}
       <div
-        class="min-h-0 flex-1 select-none overflow-auto outline-none"
+        class="flex min-h-0 flex-1 select-none flex-col overflow-auto outline-none"
         tabindex="0"
         onKeyDown={onKeyDown}
         onClick={(e) => {
@@ -327,17 +397,27 @@ const Listing: Component = () => {
               </thead>
               <tbody>
                 <For each={entries()}>
-                  {(entry) => (
+                  {(entry, index) => (
                     <tr
-                      class="cursor-default border-b border-border/40"
-                      // Selection gets the accent tint, hover keeps the grey —
-                      // and they are mutually exclusive rather than layered,
-                      // because when both were `bg-bg-muted` the row under the
-                      // cursor was indistinguishable from a selected one, which
-                      // makes a multi-row selection impossible to read.
+                      class="cursor-default"
+                      style={{ height: `${ROW_H}px` }}
+                      // Exactly one background class is ever applied, and the
+                      // conditions are mutually exclusive by construction.
+                      // Layering them would leave it to stylesheet order which
+                      // of two equally specific Tailwind classes wins — and the
+                      // one that must win is the selection.
+                      //
+                      // Selection gets the accent tint, hover the grey, and
+                      // every other row a faint stripe, Finder-style. The three
+                      // stay distinguishable: when selection and hover were
+                      // both `bg-bg-muted` a multi-row selection was unreadable
+                      // (commit 7987acb), and a stripe as strong as the hover
+                      // would bring the same problem back.
                       classList={{
                         "bg-accent/15": picked().has(entry.handle),
-                        "hover:bg-bg-muted": !picked().has(entry.handle),
+                        "hover:bg-bg-muted": !picked().has(entry.handle) && index() % 2 === 0,
+                        "bg-bg-subtle hover:bg-bg-muted":
+                          !picked().has(entry.handle) && index() % 2 === 1,
                       }}
                       onClick={(e) => onRowClick(entry.handle, e)}
                       onDblClick={() => {
@@ -352,7 +432,7 @@ const Listing: Component = () => {
                           // this, copy it instead". A double-click that does
                           // nothing at all is indistinguishable from one the
                           // app failed to notice.
-                          setPreviewing(entry);
+                          openPreview(entry);
                         }
                       }}
                     >
@@ -380,6 +460,8 @@ const Listing: Component = () => {
                 </For>
               </tbody>
             </table>
+
+            <StripeFiller count={entries().length} onClick={clearSelection} />
           </Show>
         </Show>
       </div>
@@ -414,14 +496,21 @@ const Listing: Component = () => {
         )}
       </Show>
 
-      {/* Keyed on the storage as well as the entry: object handles are only
-          unique within a device's own numbering, so the same handle on another
-          storage names another file. */}
-      <Show when={previewing()}>
+      {/* Resolved from the current listing every render, so the preview follows
+          a refresh rather than holding a row that no longer exists. If the file
+          is gone after a reload, `previewEntry()` is undefined and the modal
+          closes itself by simply not rendering. */}
+      <Show when={previewEntry()}>
         {(entry) => (
           <Show when={storageId()}>
             {(id) => (
-              <Preview entry={entry()} storageId={id()} onClose={() => setPreviewing(null)} />
+              <Preview
+                entry={entry()}
+                storageId={id()}
+                onClose={() => setPreviewing(null)}
+                onPrev={previewIndex() > 0 ? () => stepPreview(-1) : undefined}
+                onNext={previewIndex() < files().length - 1 ? () => stepPreview(1) : undefined}
+              />
             )}
           </Show>
         )}
