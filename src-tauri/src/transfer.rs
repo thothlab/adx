@@ -167,10 +167,8 @@ pub async fn upload_start(
         // A storage that no longer appears is not a space problem, and calling
         // it one would send the user deleting files to fix an unplugged phone.
         // The write below fails with the real reason.
-        if let Some(free) = free {
-            if plan.total_bytes > free {
-                return Err(AdxError::not_enough_space(plan.total_bytes, free));
-            }
+        if let Some(need) = free.and_then(|free| plan.shortfall(free)) {
+            return Err(AdxError::not_enough_space(need.required, need.free));
         }
     }
 

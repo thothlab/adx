@@ -65,6 +65,21 @@ impl UploadPlan {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty() && self.dirs.is_empty()
     }
+
+    /// `Some` when the plan does not fit in `free` bytes.
+    ///
+    /// Here rather than inline at the call site so the boundary is a test
+    /// rather than a reading of the comparison operator: off by one in the
+    /// wrong direction refuses a transfer that exactly fits, and "exactly
+    /// fits" is not a rare case — it is what filling a card looks like.
+    ///
+    /// Only the file bytes are counted. Folders cost the device something, but
+    /// nothing tells us how much, and guessing would make the refusal depend on
+    /// a number nobody can check.
+    pub fn shortfall(&self, free: u64) -> Option<crate::SpaceNeed> {
+        (self.total_bytes > free)
+            .then_some(crate::SpaceNeed { required: self.total_bytes, free })
+    }
 }
 
 /// Expand dropped paths into the work they imply.
@@ -320,6 +335,34 @@ mod tests {
 
         let long: String = "x".repeat(255);
         assert_eq!(file_name_of(Path::new(&format!("/tmp/{long}"))), None);
+    }
+
+    /// The boundary, both sides of it. A transfer that exactly fills the
+    /// remaining space must start: refusing it would be the app inventing a
+    /// limit the device does not have, and the user has no way to argue.
+    #[test]
+    fn a_transfer_that_exactly_fits_is_not_refused() {
+        let plan = UploadPlan { total_bytes: 1_000, ..Default::default() };
+
+        assert_eq!(plan.shortfall(1_001), None);
+        assert_eq!(plan.shortfall(1_000), None, "exactly filling the storage is allowed");
+
+        let need = plan.shortfall(999).expect("one byte short must be refused");
+        assert_eq!(need.required, 1_000);
+        assert_eq!(need.free, 999);
+    }
+
+    /// A plan that only creates folders moves no bytes, so it fits anywhere —
+    /// including a storage reporting zero free space, which is what a full
+    /// phone reports.
+    #[test]
+    fn creating_folders_on_a_full_storage_is_allowed() {
+        let tmp = Tmp::new("full");
+        tmp.dir("shell/inner");
+        let plan = plan_upload(&[tmp.0.join("shell")]).unwrap();
+
+        assert_eq!(plan.total_bytes, 0);
+        assert_eq!(plan.shortfall(0), None);
     }
 
     #[test]
