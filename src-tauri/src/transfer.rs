@@ -140,7 +140,40 @@ pub async fn upload_start(
         .map_err(|e| AdxError::new(ErrorKind::Io, e.to_string()))?
         .map_err(|e| AdxError::new(ErrorKind::Io, e.to_string()))?;
 
-    let guard = state.session.lock().await;
+    let mut guard = state.session.lock().await;
+
+    // Does it fit? Asked before anything is written, and asked of the device
+    // rather than of the figure the window happens to be showing — that one was
+    // read when the storage list was last refreshed, and a transfer started
+    // since then would make it a promise about the past.
+    //
+    // Only on the `Ask` pass, which is where every fresh upload begins. Once
+    // the user has answered a conflict question the arithmetic no longer holds:
+    // `Replace` reclaims the space of the objects it overwrites and `Skip`
+    // never spends it, so checking the untouched plan total there would refuse
+    // transfers that fit. A wrong refusal is worse than no check — the device
+    // still fails honestly when it runs out, and the user cannot argue with a
+    // dialog that is simply mistaken.
+    if policy == PolicyDto::Ask {
+        let session = guard
+            .as_mut()
+            .ok_or_else(|| AdxError::new(ErrorKind::NoDevice, "устройство не открыто"))?;
+        let free = session
+            .refresh_storages()
+            .await?
+            .into_iter()
+            .find(|s| s.id == storage)
+            .map(|s| s.free_space);
+        // A storage that no longer appears is not a space problem, and calling
+        // it one would send the user deleting files to fix an unplugged phone.
+        // The write below fails with the real reason.
+        if let Some(free) = free {
+            if plan.total_bytes > free {
+                return Err(AdxError::not_enough_space(plan.total_bytes, free));
+            }
+        }
+    }
+
     let session = guard
         .as_ref()
         .ok_or_else(|| AdxError::new(ErrorKind::NoDevice, "устройство не открыто"))?;

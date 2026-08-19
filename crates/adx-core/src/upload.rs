@@ -174,18 +174,14 @@ fn walk(
 
 /// The device-side name for a path, or `None` when there isn't a usable one.
 ///
-/// Rejects what MTP cannot store: an empty name, a separator, a null byte, or
-/// more than 254 characters. Checked here rather than at the device, because a
-/// rejection mid-tree leaves a half-copied folder, and the user learns about it
-/// after the wait rather than before it.
+/// The rule itself lives in [`crate::name::check_name`], shared with the rename
+/// and new-folder commands — three callers deciding independently what a legal
+/// name is would be three chances to disagree. Checked here rather than at the
+/// device because a rejection mid-tree leaves a half-copied folder, and the
+/// user learns about it after the wait rather than before it.
 fn file_name_of(path: &Path) -> Option<String> {
     let name = path.file_name()?.to_str()?.to_string();
-    if name.is_empty() || name.chars().count() > 254 {
-        return None;
-    }
-    if name.contains('/') || name.contains('\\') || name.contains('\0') {
-        return None;
-    }
+    crate::name::check_name(&name).ok()?;
     Some(name)
 }
 

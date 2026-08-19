@@ -106,5 +106,9 @@ export interface AdxError {
     | "io"
     | "protocol";
   message: string;
+  /** Only on `occupied`. */
   holder?: { pid: number; name: string };
+  /** Only on `not_enough_space`. Bytes, so the sentence around them is written
+   *  here in the user's language rather than in the backend's. */
+  space?: { required: number; free: number };
 }

@@ -55,12 +55,21 @@ export const Button: Component<{
   </button>
 );
 
-/** A single-field dialog, used for "new folder" and "rename". */
+/**
+ * A single-field dialog, used for "new folder" and "rename".
+ *
+ * `problem` is asked on every keystroke and both blocks the button and explains
+ * why. Answering before the round trip is the point: the device's own refusal
+ * of an impossible name arrives as a protocol error after a wait, which reads
+ * as the app being broken rather than as the name being wrong.
+ */
 export const PromptModal: Component<{
   title: string;
   label: string;
   initial?: string;
   confirmLabel: string;
+  /** Returns a message when the typed name cannot be used, `null` otherwise. */
+  problem?: (value: string) => string | null;
   onConfirm: (value: string) => void;
   onClose: () => void;
 }> = (props) => {
@@ -75,9 +84,14 @@ export const PromptModal: Component<{
     input?.setSelectionRange(0, dot > 0 ? dot : value().length);
   });
 
+  const problem = () => props.problem?.(value()) ?? null;
+  const ready = () => Boolean(value().trim()) && !problem();
+
   const submit = () => {
-    const name = value().trim();
-    if (name) props.onConfirm(name);
+    // Guarded here as well as on the button: Enter reaches this directly, and a
+    // dialog that refuses the click but accepts the keystroke is worse than one
+    // that never checked.
+    if (ready()) props.onConfirm(value().trim());
   };
 
   return (
@@ -87,7 +101,7 @@ export const PromptModal: Component<{
       footer={
         <>
           <Button onClick={props.onClose}>{t()("dialog.cancel")}</Button>
-          <Button variant="primary" disabled={!value().trim()} onClick={submit}>
+          <Button variant="primary" disabled={!ready()} onClick={submit}>
             {props.confirmLabel}
           </Button>
         </>
@@ -97,7 +111,11 @@ export const PromptModal: Component<{
         <span class="text-fg-muted">{props.label}</span>
         <input
           ref={input}
-          class="w-full rounded border border-border bg-bg-subtle px-2 py-1 text-xs text-fg outline-none focus:border-accent"
+          class="w-full rounded border bg-bg-subtle px-2 py-1 text-xs text-fg outline-none"
+          classList={{
+            "border-danger": Boolean(problem()),
+            "border-border focus:border-accent": !problem(),
+          }}
           value={value()}
           // macOS rewrites straight quotes and apostrophes into typographic
           // ones inside text inputs. A filename that gains a "smart" quote no
@@ -113,6 +131,10 @@ export const PromptModal: Component<{
           }}
         />
       </label>
+      {/* Reserved rather than inserted: a line appearing under the field pushes
+          the footer down and moves the button out from under the cursor at the
+          moment the user is reaching for it. */}
+      <div class="mt-1 min-h-4 text-danger">{problem()}</div>
     </Modal>
   );
 };

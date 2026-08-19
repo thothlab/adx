@@ -8,9 +8,11 @@
 pub mod download;
 pub mod error;
 pub mod model;
+pub mod name;
 pub mod upload;
 
 pub use download::host_name;
-pub use error::{AdxError, ErrorKind, ProcessRef};
+pub use error::{AdxError, ErrorKind, ProcessRef, SpaceNeed};
 pub use model::{DeviceState, TransferDirection, TransferState};
+pub use name::{check_name, NameProblem, MAX_NAME_CHARS};
 pub use upload::{plan_upload, SkipReason, UploadItem, UploadPlan};

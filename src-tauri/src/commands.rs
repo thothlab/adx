@@ -220,6 +220,10 @@ pub async fn folder_create(
     parent: Option<String>,
     name: String,
 ) -> Result<String, AdxError> {
+    // Before the lock, not after: a name the device could never store should
+    // not queue behind a running transfer to be told so.
+    adx_core::check_name(&name)?;
+
     let guard = state.session.lock().await;
     let session = guard.as_ref().ok_or_else(no_device)?;
 
@@ -293,6 +297,8 @@ pub async fn entry_rename(
     handle: String,
     name: String,
 ) -> Result<(), AdxError> {
+    adx_core::check_name(&name)?;
+
     let guard = state.session.lock().await;
     let session = guard.as_ref().ok_or_else(no_device)?;
     session.rename(token(&storage_id)?, token(&handle)?, &name).await
