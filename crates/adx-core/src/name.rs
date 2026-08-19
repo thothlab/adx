@@ -119,6 +119,21 @@ mod tests {
         assert_eq!(check_name(&long_with_slash), Err(NameProblem::Invalid));
     }
 
+    /// The mapping the commands actually return through `?`. Untested, a
+    /// swapped arm is invisible: every other test here still passes, and the
+    /// user is told a 300-character name "contains invalid characters" and goes
+    /// looking for a character that is not there.
+    #[test]
+    fn each_problem_keeps_its_own_error_kind() {
+        use crate::{AdxError, ErrorKind};
+
+        assert_eq!(AdxError::from(NameProblem::TooLong).kind, ErrorKind::NameTooLong);
+        assert_eq!(AdxError::from(NameProblem::Invalid).kind, ErrorKind::NameInvalid);
+        // Empty deliberately shares `NameInvalid` — one sentence for the user,
+        // and the dialog keeps its button disabled long before this is reached.
+        assert_eq!(AdxError::from(NameProblem::Empty).kind, ErrorKind::NameInvalid);
+    }
+
     /// These exact strings are pinned in `src/lib/names.test.ts` as well. The
     /// two implementations are allowed to exist; disagreeing is not.
     #[test]
