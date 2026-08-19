@@ -1,4 +1,4 @@
-import { type Component, createEffect, createSignal, For, type JSX, Show } from "solid-js";
+import { type Component, createSignal, For, type JSX, onMount, Show } from "solid-js";
 import { t } from "@/i18n";
 
 /**
@@ -76,12 +76,19 @@ export const PromptModal: Component<{
   const [value, setValue] = createSignal(props.initial ?? "");
   let input: HTMLInputElement | undefined;
 
-  createEffect(() => {
-    // Focus and preselect the stem, so renaming "photo.jpg" does not mean
-    // retyping the extension.
+  // Once, when the dialog opens: focus the field and preselect the stem, so
+  // renaming "photo.jpg" does not mean retyping the extension.
+  //
+  // `onMount`, not `createEffect`. An effect reading `value()` re-runs on every
+  // keystroke and re-selects the stem each time, so the next character replaces
+  // what was just typed and the field never holds more than one — a rename
+  // dialog that cannot be typed into. It was written as an effect and looked
+  // right; nothing catches it except typing a whole name into it.
+  onMount(() => {
+    const initial = props.initial ?? "";
+    const dot = initial.lastIndexOf(".");
     input?.focus();
-    const dot = value().lastIndexOf(".");
-    input?.setSelectionRange(0, dot > 0 ? dot : value().length);
+    input?.setSelectionRange(0, dot > 0 ? dot : initial.length);
   });
 
   const problem = () => props.problem?.(value()) ?? null;
