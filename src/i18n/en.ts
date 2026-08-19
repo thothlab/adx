@@ -82,6 +82,7 @@ const en = {
     too_big: "Too large to preview (over {{size}}) — copy it to the computer instead.",
     truncated: "Showing the first {{size}} — the file is longer.",
     no_pdf_viewer: "This system cannot show a PDF here — copy the file to the computer.",
+    pdf_hint: "Blank? This system cannot show a PDF here — copy the file to the computer.",
   },
   jobs: {
     title: "Operations",

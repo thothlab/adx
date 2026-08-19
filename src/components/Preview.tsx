@@ -129,10 +129,18 @@ const Preview: Component<{ entry: EntryDto; storageId: string; onClose: () => vo
                       </Show>
 
                       <Show when={kind === "pdf"}>
-                        {/* An `<object>` rather than an `<iframe>`: its
-                            `fallback` children render when the engine has no
+                        {/* An `<object>` rather than an `<iframe>`: its children
+                            are a real fallback, rendered when the engine has no
                             PDF viewer, which is the honest outcome on the
-                            platforms that do not (rather than a blank frame). */}
+                            platforms that do not.
+                            The hint below it is not redundant with that
+                            fallback. Whether a given engine renders the
+                            fallback or just paints an empty frame is its
+                            business, and an empty modal with no text is the one
+                            outcome the user cannot act on — worse than saying
+                            "no preview for this". So the way out is stated
+                            unconditionally, next to the viewer rather than
+                            instead of it. */}
                         <object
                           data={loaded().url}
                           type="application/pdf"
@@ -159,7 +167,13 @@ const Preview: Component<{ entry: EntryDto; storageId: string; onClose: () => vo
           </Show>
         </div>
 
-        <footer class="flex shrink-0 justify-end gap-2 border-t border-border px-3 py-2">
+        <footer class="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
+          <Show when={kind === "pdf" && !tooBig}>
+            <span class="min-w-0 flex-1 truncate text-xs text-fg-muted">
+              {t()("preview.pdf_hint")}
+            </span>
+          </Show>
+          <span class="ml-auto" />
           <Button onClick={() => props.onClose()}>{t()("dialog.close")}</Button>
         </footer>
       </div>
