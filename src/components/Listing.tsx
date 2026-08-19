@@ -1,6 +1,7 @@
 import { type Component, createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { downloadDir } from "@tauri-apps/api/path";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import {
   ChevronRight,
   Download,
@@ -66,6 +67,26 @@ import { upload } from "@/stores/transfer";
 const ROW_H = 24;
 
 /**
+ * The header is exactly one row tall, and the virtualizer is told so.
+ *
+ * It scrolls with the content (sticking at the top) rather than living outside
+ * the scroll box, so every row offset the virtualizer computes is measured from
+ * above it. One constant, given to `scrollMargin` and subtracted in the row
+ * transform: if the two ever disagree, every row is off by the difference and
+ * the last one is unreachable.
+ */
+const HEADER_H = ROW_H;
+
+/**
+ * Column widths, shared by the header and every row.
+ *
+ * Name takes what is left and may shrink to nothing (`minmax(0, 1fr)` rather
+ * than `1fr`, or a long filename would push the other two columns off the
+ * right edge instead of truncating).
+ */
+const COLUMNS = "minmax(0, 1fr) 6rem 9rem";
+
+/**
  * The striped area below the last row, as in Finder.
  *
  * Its phase is not guessed — it starts exactly where the table ends, so its
@@ -100,6 +121,25 @@ const Listing: Component = () => {
    *  preview resolves to the fresh row instead of pinning a stale copy. */
   const [previewing, setPreviewing] = createSignal<string | null>(null);
 
+  let scrollEl: HTMLDivElement | undefined;
+
+  const virtualizer = createVirtualizer({
+    // A getter, not a value: this is what makes the option reactive, so a new
+    // folder resizes the list instead of leaving the previous folder's count.
+    get count() {
+      return entries().length;
+    },
+    getScrollElement: () => scrollEl ?? null,
+    // Fixed, not measured. Measurement exists for rows that wrap, and these do
+    // not — every cell truncates. It is also the number the stripes below the
+    // last row are drawn with, so a row that measured differently would break
+    // the rhythm at the seam.
+    estimateSize: () => ROW_H,
+    // The header scrolls above the rows, so row offsets start below it.
+    scrollMargin: HEADER_H,
+    overscan: 12,
+  });
+
   const picked = () => rows().picked;
   const handles = () => entries().map((e) => e.handle);
   const selection = createMemo(() => entries().filter((e) => picked().has(e.handle)));
@@ -115,8 +155,20 @@ const Listing: Component = () => {
    * Delete removing something the user never selected, in a directory they are
    * no longer looking at. Filtering `selection()` against `entries()` does not
    * protect against this — a colliding handle passes that filter.
+   *
+   * The scroll position goes back to the top in the same breath, and that half
+   * is about the virtualizer rather than about handles: it renders whatever
+   * range the current offset points at, so a folder entered while scrolled to
+   * row 400 opens showing blank space below its ten rows, with no way to tell
+   * that from an empty folder. Source: `Projects/Pane/Правки` — a virtual list
+   * has to be reset explicitly when its contents are swapped.
    */
-  createEffect(on([storageId, crumbs], clearSelection));
+  createEffect(
+    on([storageId, crumbs], () => {
+      clearSelection();
+      if (scrollEl) scrollEl.scrollTop = 0;
+    }),
+  );
 
   const onRowClick = (handle: string, e: MouseEvent) =>
     setRows(
@@ -204,6 +256,14 @@ const Listing: Component = () => {
     if (!next) return;
     setPreviewing(next.handle);
     setRows({ picked: new Set([next.handle]), anchor: next.handle });
+
+    // Bring the row into view. Not cosmetic since the list became virtual: a
+    // row outside the rendered window is not in the DOM at all, so paging
+    // through a long folder and pressing Escape would leave the user looking at
+    // rows with no selection anywhere on screen — which is exactly the thing
+    // the cursor-follows-the-preview behaviour exists to prevent.
+    const row = entries().findIndex((e) => e.handle === next.handle);
+    if (row >= 0) virtualizer.scrollToIndex(row);
   };
 
   const openPreview = (entry: EntryDto) => {
@@ -380,6 +440,7 @@ const Listing: Component = () => {
           browser's text-extend on mousedown and paints a blue smear across the
           rows instead of selecting them. */}
       <div
+        ref={scrollEl}
         class="flex min-h-0 flex-1 select-none flex-col overflow-auto outline-none"
         tabindex="0"
         onKeyDown={onKeyDown}
@@ -403,84 +464,111 @@ const Listing: Component = () => {
               </div>
             }
           >
-            <table class="w-full border-collapse text-xs">
-              <thead class="sticky top-0 bg-bg text-fg-subtle">
-                <tr class="border-b border-border">
-                  <th class="px-2 py-1 text-left font-medium">{t()("listing.name")}</th>
-                  <th class="w-24 px-2 py-1 text-right font-medium">{t()("listing.size")}</th>
-                  {/* Wide enough for "2026-08-17 08:19" on one line. At w-32
-                      every date wrapped, which doubled every row's height and
-                      made the listing look like it was rendering badly. */}
-                  <th class="w-36 whitespace-nowrap px-2 py-1 text-left font-medium">
-                    {t()("listing.modified")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={entries()}>
-                  {(entry, index) => (
-                    <tr
-                      class="cursor-default"
-                      style={{ height: `${ROW_H}px` }}
-                      // Exactly one background class is ever applied, and the
-                      // conditions are mutually exclusive by construction.
-                      // Layering them would leave it to stylesheet order which
-                      // of two equally specific Tailwind classes wins — and the
-                      // one that must win is the selection.
-                      //
-                      // Selection gets the accent tint, hover the grey, and
-                      // every other row a faint stripe, Finder-style. The three
-                      // stay distinguishable: when selection and hover were
-                      // both `bg-bg-muted` a multi-row selection was unreadable
-                      // (commit 7987acb), and a stripe as strong as the hover
-                      // would bring the same problem back.
-                      classList={{
-                        "bg-accent/15": picked().has(entry.handle),
-                        "hover:bg-bg-muted": !picked().has(entry.handle) && index() % 2 === 0,
-                        "bg-bg-subtle hover:bg-bg-muted":
-                          !picked().has(entry.handle) && index() % 2 === 1,
-                      }}
-                      onClick={(e) => onRowClick(entry.handle, e)}
-                      onDblClick={() => {
-                        if (entry.isFolder) {
-                          // The two clicks that precede this one already moved
-                          // the selection here; entering the folder clears it,
-                          // and the folder-change effect clears the anchor.
-                          void enterFolder(entry.handle, entry.name);
-                        } else {
-                          // Opened for every file, not only the ones with a
-                          // preview: the modal itself says "no preview for
-                          // this, copy it instead". A double-click that does
-                          // nothing at all is indistinguishable from one the
-                          // app failed to notice.
-                          openPreview(entry);
-                        }
-                      }}
-                    >
-                      <td class="max-w-0 px-2 py-1">
-                        <span class="flex items-center gap-1.5">
+            {/* The header is a grid row with the same template as every data
+                row, and that shared constant is the whole reason the columns
+                line up: two independent width declarations are two chances to
+                drift, and the drift only shows once real data is in the cells. */}
+            <div
+              class="sticky top-0 z-10 grid shrink-0 items-center border-b border-border bg-bg text-xs font-medium text-fg-subtle"
+              style={{ height: `${HEADER_H}px`, "grid-template-columns": COLUMNS }}
+            >
+              <div class="min-w-0 truncate px-2">{t()("listing.name")}</div>
+              <div class="px-2 text-right">{t()("listing.size")}</div>
+              {/* Wide enough for "2026-08-17 08:19" on one line. At w-32 every
+                  date wrapped, which doubled every row's height and made the
+                  listing look like it was rendering badly. */}
+              <div class="whitespace-nowrap px-2">{t()("listing.modified")}</div>
+            </div>
+
+            {/* Only the rows in view exist in the DOM. A folder of 5000 objects
+                is a normal camera roll, and 5000 rows of three cells each is
+                where a listing stops scrolling and starts stuttering. The
+                container keeps the full height so the scrollbar still tells the
+                truth about how much is below. */}
+            <div
+              class="relative shrink-0"
+              style={{ height: `${virtualizer.getTotalSize()}px` }}
+            >
+              <For each={virtualizer.getVirtualItems()}>
+                {(row) => (
+                  <Show when={entries()[row.index]}>
+                    {(entry) => (
+                      <div
+                        class="absolute inset-x-0 top-0 grid cursor-default items-center text-xs"
+                        style={{
+                          height: `${ROW_H}px`,
+                          // `translateY`, not `top`: a transform is composited,
+                          // and this value changes on every scroll frame.
+                          // `row.start` is measured from the top of the scroll
+                          // content, which includes the header — hence the
+                          // subtraction, the same figure given as `scrollMargin`.
+                          transform: `translateY(${row.start - HEADER_H}px)`,
+                          "grid-template-columns": COLUMNS,
+                        }}
+                        // Exactly one background class is ever applied, and the
+                        // conditions are mutually exclusive by construction.
+                        // Layering them would leave it to stylesheet order which
+                        // of two equally specific Tailwind classes wins — and the
+                        // one that must win is the selection.
+                        //
+                        // Selection gets the accent tint, hover the grey, and
+                        // every other row a faint stripe, Finder-style. The three
+                        // stay distinguishable: when selection and hover were
+                        // both `bg-bg-muted` a multi-row selection was unreadable
+                        // (commit 7987acb), and a stripe as strong as the hover
+                        // would bring the same problem back.
+                        //
+                        // The stripe follows `row.index`, not the position in
+                        // the rendered slice: virtual rows come and go, and a
+                        // stripe keyed on the slice would repaint itself every
+                        // scroll frame.
+                        classList={{
+                          "bg-accent/15": picked().has(entry().handle),
+                          "hover:bg-bg-muted":
+                            !picked().has(entry().handle) && row.index % 2 === 0,
+                          "bg-bg-subtle hover:bg-bg-muted":
+                            !picked().has(entry().handle) && row.index % 2 === 1,
+                        }}
+                        onClick={(e) => onRowClick(entry().handle, e)}
+                        onDblClick={() => {
+                          if (entry().isFolder) {
+                            // The two clicks that precede this one already moved
+                            // the selection here; entering the folder clears it,
+                            // and the folder-change effect clears the anchor.
+                            void enterFolder(entry().handle, entry().name);
+                          } else {
+                            // Opened for every file, not only the ones with a
+                            // preview: the modal itself says "no preview for
+                            // this, copy it instead". A double-click that does
+                            // nothing at all is indistinguishable from one the
+                            // app failed to notice.
+                            openPreview(entry());
+                          }
+                        }}
+                      >
+                        <span class="flex min-w-0 items-center gap-1.5 px-2">
                           <Show
-                            when={entry.isFolder}
+                            when={entry().isFolder}
                             fallback={<FileIcon size={12} class="shrink-0 text-fg-muted" />}
                           >
                             <Folder size={12} class="shrink-0 text-accent" />
                           </Show>
-                          <span class="truncate">{entry.name}</span>
+                          <span class="truncate">{entry().name}</span>
                         </span>
-                      </td>
-                      <td class="px-2 py-1 text-right tabular-nums text-fg-muted">
-                        <Show when={!entry.isFolder} fallback={<span>—</span>}>
-                          {formatBytes(entry.size)}
-                        </Show>
-                      </td>
-                      <td class="whitespace-nowrap px-2 py-1 font-mono text-fg-muted">
-                        {entry.modified ?? "—"}
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
+                        <span class="px-2 text-right tabular-nums text-fg-muted">
+                          <Show when={!entry().isFolder} fallback="—">
+                            {formatBytes(entry().size)}
+                          </Show>
+                        </span>
+                        <span class="whitespace-nowrap px-2 font-mono text-fg-muted">
+                          {entry().modified ?? "—"}
+                        </span>
+                      </div>
+                    )}
+                  </Show>
+                )}
+              </For>
+            </div>
 
             <StripeFiller count={entries().length} onClick={clearSelection} />
           </Show>
