@@ -2,7 +2,6 @@ import { type Component, createEffect, createMemo, createSignal, For, on, Show }
 import { open } from "@tauri-apps/plugin-dialog";
 import { downloadDir } from "@tauri-apps/api/path";
 import {
-  AlertCircle,
   ChevronRight,
   Download,
   File as FileIcon,
@@ -17,8 +16,10 @@ import {
 import { t } from "@/i18n";
 import type { EntryDto } from "@/ipc/types";
 import { formatBytes } from "@/lib/format";
+import { checkName } from "@/lib/names";
 import { afterClick, EMPTY_SELECTION, selectAll, type Selection } from "@/lib/selection";
 import { Dropdown, DropdownItem } from "@/components/Dropdown";
+import ErrorBanner from "@/components/ErrorBanner";
 import { Button, ConfirmModal, PromptModal } from "@/components/Modal";
 import Preview from "@/components/Preview";
 import { download, transferBusy } from "@/stores/download";
@@ -210,6 +211,23 @@ const Listing: Component = () => {
     setRows({ picked: new Set([entry.handle]), anchor: entry.handle });
   };
 
+  /**
+   * The reason a typed name cannot be used, in the interface language, or
+   * `null`.
+   *
+   * The sibling names come from the listing already on screen, so "already
+   * taken" costs nothing; asking the device would be a folder read over USB per
+   * dialog.
+   */
+  const nameProblem = (name: string, self?: string) => {
+    const problem = checkName(
+      name,
+      entries().map((e) => e.name),
+      self,
+    );
+    return problem ? t()(`errors.${problem}`) : null;
+  };
+
   const saveToDownloads = async () => {
     // `downloadDir()` throws where the OS has no such folder rather than
     // returning null, and a rejected promise here would silently do nothing.
@@ -347,14 +365,12 @@ const Listing: Component = () => {
         </For>
       </div>
 
+      {/* Cleared by every re-read of the folder, so there is nothing to
+          dismiss — see `loadEntries` in the browser store. */}
       <Show when={browseError()}>
         {(err) => (
-          <div class="flex shrink-0 items-start gap-2 border-b border-danger/30 bg-danger/10 px-2 py-1.5 text-xs text-danger">
-            <AlertCircle size={13} class="mt-0.5 shrink-0" />
-            <div>
-              <div class="font-medium">{t()(`errors.${err().kind}`)}</div>
-              <div class="opacity-80">{err().message}</div>
-            </div>
+          <div class="shrink-0 px-2 py-1.5">
+            <ErrorBanner error={err()} />
           </div>
         )}
       </Show>
@@ -476,6 +492,7 @@ const Listing: Component = () => {
           title={t()("dialog.new_folder_title")}
           label={t()("dialog.name_label")}
           confirmLabel={t()("dialog.create")}
+          problem={(name) => nameProblem(name)}
           onClose={() => setCreating(false)}
           onConfirm={(name) => {
             setCreating(false);
@@ -491,6 +508,7 @@ const Listing: Component = () => {
             label={t()("dialog.name_label")}
             initial={target().name}
             confirmLabel={t()("dialog.rename")}
+            problem={(name) => nameProblem(name, target().name)}
             onClose={() => setRenaming(null)}
             onConfirm={(name) => {
               const handle = target().handle;

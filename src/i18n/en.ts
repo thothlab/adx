@@ -41,6 +41,12 @@ const en = {
     cancelled: "Cancelled",
     io: "Device communication error",
     protocol: "Unexpected device response",
+    detail: "Technical details",
+    dismiss: "Dismiss",
+    occupied_hint: "Quit the application holding the device, then press Refresh.",
+    space_detail: "Needs {{required}}, {{free}} free.",
+    permission_hint:
+      "The device is not held by anything — this user account may not open USB devices. Find the phone's vendor id and allow it:",
   },
   storages: {
     title: "Storage",

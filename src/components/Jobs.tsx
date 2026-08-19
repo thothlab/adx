@@ -1,8 +1,9 @@
 import { type Component, createMemo, For, type JSX, Show } from "solid-js";
-import { AlertCircle, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Check, X } from "lucide-solid";
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Check, X } from "lucide-solid";
 import { t } from "@/i18n";
 import type { AdxError, TransferOutcome, TransferProgress } from "@/ipc/types";
 import { formatBytes, fraction } from "@/lib/format";
+import ErrorBanner from "@/components/ErrorBanner";
 import { Button, Modal } from "@/components/Modal";
 import {
   cancelConflicts,
@@ -144,19 +145,10 @@ const Track: Component<{
       )}
     </Show>
 
+    {/* Dismissable here, unlike the other two: nothing re-reads a finished
+        transfer, so this banner has no event that would clear it. */}
     <Show when={props.error}>
-      {(err) => (
-        <div class="flex items-start gap-2 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-danger">
-          <AlertCircle size={13} class="mt-0.5 shrink-0" />
-          <div class="min-w-0 flex-1">
-            <div class="font-medium">{t()(`errors.${err().kind}`)}</div>
-            <div class="break-words opacity-80">{err().message}</div>
-          </div>
-          <button class="shrink-0 opacity-60 hover:opacity-100" onClick={props.onDismiss}>
-            <X size={12} />
-          </button>
-        </div>
-      )}
+      {(err) => <ErrorBanner error={err()} onDismiss={props.onDismiss} />}
     </Show>
 
     <Show when={props.summary}>

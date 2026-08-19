@@ -1,7 +1,8 @@
 import { type Component, For, Show } from "solid-js";
-import { AlertCircle, Smartphone } from "lucide-solid";
+import { Smartphone } from "lucide-solid";
 import type { AdxError, DeviceDto } from "@/ipc/types";
 import { t } from "@/i18n";
+import ErrorBanner from "@/components/ErrorBanner";
 
 /**
  * The device list and its empty states. Three of them are genuinely different
@@ -62,24 +63,9 @@ const DeviceList: Component<{
   onSelect: (serial: string) => void;
 }> = (props) => (
   <div class="space-y-2 p-2">
-    <Show when={props.error}>
-      {(err) => (
-        <div class="flex items-start gap-2 rounded border border-danger/40 bg-danger/10 px-2 py-1.5 text-xs text-danger">
-          <AlertCircle size={13} class="mt-0.5 shrink-0" />
-          <div>
-            <div class="font-medium">{t()(`errors.${err().kind}`)}</div>
-            <Show when={err().holder}>
-              {(h) => (
-                <div class="mt-0.5 font-mono text-xs opacity-80">
-                  {h().name}
-                  <Show when={h().pid > 0}> ({h().pid})</Show>
-                </div>
-              )}
-            </Show>
-          </div>
-        </div>
-      )}
-    </Show>
+    {/* No dismiss button: Refresh and every hotplug event clear this one, so a
+        banner the user hid would come back on the next USB event anyway. */}
+    <Show when={props.error}>{(err) => <ErrorBanner error={err()} />}</Show>
 
     <Show
       when={props.devices?.length}
