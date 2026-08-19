@@ -7,7 +7,7 @@
 //! turning the executor's report into JSON the frontend can branch on.
 
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -85,6 +85,27 @@ impl From<UploadReport> for UploadOutcomeDto {
     }
 }
 
+/// Marks the device as busy for exactly as long as a transfer runs.
+///
+/// A guard rather than a store at each exit: `upload_start` and
+/// `download_start` leave through half a dozen `?`s and early returns, and a
+/// flag cleared on only the happy path would leave media playback refused until
+/// the app restarted — a failure that looks nothing like its cause.
+struct Busy(Arc<AtomicBool>);
+
+impl Busy {
+    fn claim(flag: &Arc<AtomicBool>) -> Self {
+        flag.store(true, Ordering::SeqCst);
+        Self(Arc::clone(flag))
+    }
+}
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProgressDto {
@@ -107,6 +128,7 @@ pub async fn upload_start(
     paths: Vec<String>,
     policy: PolicyDto,
 ) -> Result<UploadOutcomeDto, AdxError> {
+    let _busy = Busy::claim(&state.transferring);
     let storage = token(&storage_id)?;
     let target = parent.as_deref().map(token).transpose()?;
 
@@ -248,6 +270,7 @@ pub async fn download_start(
     dest: String,
     policy: PolicyDto,
 ) -> Result<DownloadOutcomeDto, AdxError> {
+    let _busy = Busy::claim(&state.transferring);
     let storage = token(&storage_id)?;
     let roots: Vec<DownloadRoot> = roots
         .into_iter()

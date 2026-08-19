@@ -293,6 +293,23 @@ impl Session {
             .map_err(|e| map_error(&e))
     }
 
+    /// Size of one object, straight from the device.
+    ///
+    /// The listing already carries a size, so this exists for the one caller
+    /// that must not trust it: the streaming protocol answers `Content-Range`
+    /// with a total, and a player seeks against that number. A stale total from
+    /// a listing read minutes ago makes the last seek land past the end of the
+    /// file, which the player reports as a broken stream rather than as a stale
+    /// number.
+    pub async fn object_size(&self, storage_id: u64, handle: u64) -> Result<u64, AdxError> {
+        let storage = self.storage(storage_id)?;
+        storage
+            .get_object_info(ObjectHandle(handle))
+            .await
+            .map(|info| info.size)
+            .map_err(|e| map_error(&e))
+    }
+
     /// Read a bounded slice of an object into memory.
     ///
     /// For previews and thumbnails, where the whole point is to read the first

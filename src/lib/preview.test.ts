@@ -1,16 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { extensionOf, isTruncatable, mimeOf, previewKind, PREVIEW_LIMITS } from "./preview";
+import {
+  extensionOf,
+  isStreamed,
+  isTruncatable,
+  mimeOf,
+  previewKind,
+  PREVIEW_LIMITS,
+} from "./preview";
 
 describe("previewKind", () => {
-  it("recognises the three kinds the modal can render", () => {
+  it("recognises every kind the modal can render", () => {
     expect(previewKind("photo.JPG")).toBe("image");
     expect(previewKind("scan.pdf")).toBe("pdf");
     expect(previewKind("notes.md")).toBe("text");
+    expect(previewKind("clip.mp4")).toBe("video");
+    expect(previewKind("book.m4b")).toBe("audio");
+    expect(previewKind("track.mp3")).toBe("audio");
+  });
+
+  /** Common on Android and not decodable by WebKit. Claiming them would give
+   *  the user a black rectangle instead of "copy it to the computer". */
+  it("does not claim media the engine cannot decode", () => {
+    expect(previewKind("movie.mkv")).toBeNull();
+    expect(previewKind("movie.avi")).toBeNull();
+    expect(previewKind("movie.wmv")).toBeNull();
   });
 
   it("says nothing for what it cannot show, rather than guessing", () => {
-    expect(previewKind("song.m4b")).toBeNull();
-    expect(previewKind("clip.mp4")).toBeNull();
+    expect(previewKind("app.apk")).toBeNull();
     expect(previewKind("archive.zip")).toBeNull();
     expect(previewKind("Makefile")).toBeNull();
   });
@@ -41,6 +58,20 @@ describe("preview limits", () => {
   it("keeps every ceiling positive and the text one the smallest", () => {
     for (const limit of Object.values(PREVIEW_LIMITS)) expect(limit).toBeGreaterThan(0);
     expect(PREVIEW_LIMITS.text).toBeLessThan(PREVIEW_LIMITS.image);
+  });
+
+  /** A ceiling on a streamed kind would reject exactly the files streaming was
+   *  built for — the 700 MB audiobooks on the device this was measured against
+   *  are the normal case, not the edge one. */
+  it("puts no ceiling on what is streamed", () => {
+    expect(isStreamed("video")).toBe(true);
+    expect(isStreamed("audio")).toBe(true);
+    expect(isStreamed("image")).toBe(false);
+    expect(isStreamed("pdf")).toBe(false);
+
+    expect(PREVIEW_LIMITS.video).toBe(Number.POSITIVE_INFINITY);
+    expect(PREVIEW_LIMITS.audio).toBe(Number.POSITIVE_INFINITY);
+    expect(800 * 1024 * 1024).toBeLessThan(PREVIEW_LIMITS.audio);
   });
 });
 

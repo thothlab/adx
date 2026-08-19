@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AdxError,
@@ -61,6 +61,25 @@ export const api = {
     cancel: () => invoke<void>("download_cancel"),
   },
 };
+
+/**
+ * URL a `<video>` or `<audio>` element can point at, served by the `adx://`
+ * handler in `src-tauri/src/stream.rs` a byte range at a time.
+ *
+ * `convertFileSrc` rather than a hand-built string: the scheme's URL shape
+ * differs per platform (`adx://localhost/...` against `http://adx.localhost/...`
+ * on Windows) and this is the function that knows which.
+ *
+ * The extension is part of the path because the handler serves the
+ * `Content-Type` from it, and a player handed the wrong type reports a good
+ * file as broken. `-` separates the ids because `convertFileSrc`
+ * percent-encodes its argument and leaves `-` alone.
+ */
+export function streamUrl(storageId: string, handle: string, name: string): string {
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "bin";
+  return convertFileSrc(`${storageId}-${handle}.${ext}`, "adx");
+}
 
 /** Event names, mirrored from `src-tauri`. */
 export const events = {

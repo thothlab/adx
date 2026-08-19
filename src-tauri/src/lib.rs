@@ -10,6 +10,7 @@
 
 mod commands;
 mod state;
+mod stream;
 mod transfer;
 
 use tauri::{Emitter, Manager, RunEvent};
@@ -29,6 +30,10 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
+        // Media is served, not loaded: a `<video>` or `<audio>` element asks
+        // this scheme for the byte ranges it wants. See `stream.rs` for why a
+        // blob cannot do the job on files this size.
+        .register_asynchronous_uri_scheme_protocol(stream::SCHEME, stream::handle)
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())

@@ -26,4 +26,13 @@ pub struct AppState {
     /// An `Arc` because the progress callback handed to `mtp-rs` outlives the
     /// borrow of state.
     pub cancel: Arc<AtomicBool>,
+    /// True while a transfer owns the device.
+    ///
+    /// Read by the `adx://` media protocol, which is the one consumer that can
+    /// arrive without the user pressing anything — a `<video>` element asks for
+    /// the next chunk on its own schedule. Both would work interleaved and both
+    /// would crawl, so playback is refused outright while a copy runs. The
+    /// session mutex cannot express this: taking the lock means waiting, and
+    /// what the player needs is an answer.
+    pub transferring: Arc<AtomicBool>,
 }

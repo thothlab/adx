@@ -11,7 +11,15 @@
  * is for each. None of that is reachable from a test once it lives inside JSX.
  */
 
-export type PreviewKind = "image" | "pdf" | "text";
+export type PreviewKind = "image" | "pdf" | "text" | "video" | "audio";
+
+/** Kinds served by the `adx://` scheme instead of read into memory. Media
+ *  files run to hundreds of megabytes — the phone this was built against has
+ *  700 MB audiobooks — so they are streamed by byte range, which also makes the
+ *  position slider work. Everything else is small enough to read once. */
+export function isStreamed(kind: PreviewKind): boolean {
+  return kind === "video" || kind === "audio";
+}
 
 /**
  * Formats the webview renders natively. HEIC is included because Safari's
@@ -30,16 +38,31 @@ const TEXT = [
 ];
 
 /**
+ * Formats the webview's media engines decode. Deliberately not everything a
+ * phone can hold: `.mkv` and `.avi` are common on Android and neither plays in
+ * WebKit, and offering them would produce a black rectangle instead of the
+ * honest "no preview for this — copy it to the computer".
+ */
+const VIDEO = ["mp4", "m4v", "mov", "webm", "ogv", "3gp"];
+const AUDIO = ["mp3", "m4a", "m4b", "aac", "wav", "flac", "oga", "ogg", "opus"];
+
+/**
  * Ceilings per kind, in bytes.
  *
  * A text file is truncated at its ceiling and still shown — the first megabyte
  * of a log answers most questions. An image or a PDF is useless truncated, so
  * over the ceiling the preview refuses and points at the download instead.
+ *
+ * Streamed kinds have no ceiling and are set to `Infinity` rather than to some
+ * large number: nothing about a 4 GB video is harder for the player than a
+ * 40 MB one, because neither is ever held whole.
  */
 export const PREVIEW_LIMITS: Record<PreviewKind, number> = {
   image: 32 * 1024 * 1024,
   pdf: 64 * 1024 * 1024,
   text: 1024 * 1024,
+  video: Number.POSITIVE_INFINITY,
+  audio: Number.POSITIVE_INFINITY,
 };
 
 /** Whether the kind can be shown from a partial read. */
@@ -60,12 +83,15 @@ export function previewKind(name: string): PreviewKind | null {
   if (!ext) return null;
   if (IMAGE.includes(ext)) return "image";
   if (ext === "pdf") return "pdf";
+  if (VIDEO.includes(ext)) return "video";
+  if (AUDIO.includes(ext)) return "audio";
   if (TEXT.includes(ext)) return "text";
   return null;
 }
 
 /** MIME type for the Blob, which is what makes the webview render it rather
- *  than offer to save it. */
+ *  than offer to save it. Streamed kinds do not go through here — their type
+ *  comes from the `Content-Type` the `adx://` handler sends. */
 export function mimeOf(kind: PreviewKind, name: string): string {
   if (kind === "pdf") return "application/pdf";
   if (kind === "text") return "text/plain; charset=utf-8";
