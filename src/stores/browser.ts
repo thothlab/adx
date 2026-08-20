@@ -122,21 +122,84 @@ export async function goToPath(path: Crumb[]): Promise<void> {
   await loadEntries();
 }
 
+/**
+ * Which folder the rows in `entries()` actually describe.
+ *
+ * Compared against the folder being asked for, so a re-read of the folder
+ * already on screen can be told from a move to a different one. The two want
+ * opposite treatment: a move must drop the old rows, a refresh must keep them.
+ */
+const [shownFolder, setShownFolder] = createSignal<string | null>(null);
+
+/**
+ * True only while moving to a folder whose contents are not on screen yet.
+ *
+ * Deliberately narrower than `busy()`. `busy()` also covers re-reading the
+ * current folder after a write, and blanking the listing for that would make
+ * every rename flash the folder away and back.
+ */
+const [folderLoading, setFolderLoading] = createSignal(false);
+
+export { folderLoading };
+
+function folderKey(id: string, path: Crumb[]): string {
+  return [id, ...path.map((c) => c.handle ?? "")].join("/");
+}
+
+/**
+ * Sequence number of the newest listing request.
+ *
+ * Two listings can be in flight at once — clicking through the tree faster than
+ * a phone answers is normal, and the whole reason this is being made visible is
+ * that folders can be slow. Without this, the *slower* request wins whenever it
+ * lands second, and the user is left looking at a folder they navigated away
+ * from, with a breadcrumb that says otherwise.
+ */
+let latestRequest = 0;
+
 export async function loadEntries(): Promise<void> {
   const id = storageId();
   if (!id) {
     setEntries([]);
+    setShownFolder(null);
     return;
+  }
+
+  const key = folderKey(id, crumbs());
+  const moving = key !== shownFolder();
+  const mine = ++latestRequest;
+
+  if (moving) {
+    // The rows of the folder being left go immediately. They are not merely
+    // stale decoration: MTP object handles are unique per device, not per
+    // folder, so a click landing on one of them acts on a real object that is
+    // simply not the one the user is looking at.
+    setEntries([]);
+    setShownFolder(null);
+    setFolderLoading(true);
   }
   setBusy(true);
   setBrowseError(null);
+
   try {
-    setEntries(await api.folders.list(id, currentFolder()));
+    const list = await api.folders.list(id, currentFolder());
+    // Superseded while we waited: whatever came back describes a folder the
+    // user has already left, and writing it now would undo the newer request.
+    if (mine !== latestRequest) return;
+    setEntries(list);
+    setShownFolder(key);
   } catch (e) {
+    if (mine !== latestRequest) return;
     setBrowseError(asAdxError(e));
     setEntries([]);
   } finally {
-    setBusy(false);
+    // Only the newest request may clear the flags — an older one finishing
+    // late would otherwise take the spinner down while its replacement is
+    // still running.
+    if (mine === latestRequest) {
+      setBusy(false);
+      setFolderLoading(false);
+    }
   }
 }
 

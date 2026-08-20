@@ -71,6 +71,7 @@ const en = {
     title: "Files",
     empty: "Select a folder",
     empty_folder: "This folder is empty",
+    loading: "Loading…",
     name: "Name",
     size: "Size",
     modified: "Modified",

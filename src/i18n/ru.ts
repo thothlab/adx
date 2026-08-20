@@ -66,6 +66,7 @@ const ru: Dict = {
     title: "Файлы",
     empty: "Выберите папку",
     empty_folder: "Папка пуста",
+    loading: "Загрузка…",
     name: "Имя",
     size: "Размер",
     modified: "Изменён",

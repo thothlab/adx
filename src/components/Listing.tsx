@@ -17,10 +17,12 @@ import {
 import { t } from "@/i18n";
 import type { EntryDto } from "@/ipc/types";
 import { formatBytes } from "@/lib/format";
+import { createDelayed, SPINNER_DELAY_MS } from "@/lib/delayed";
 import { checkName } from "@/lib/names";
 import { afterClick, EMPTY_SELECTION, selectAll, type Selection } from "@/lib/selection";
 import { Dropdown, DropdownItem } from "@/components/Dropdown";
 import ErrorBanner from "@/components/ErrorBanner";
+import Spinner from "@/components/Spinner";
 import { Button, ConfirmModal, PromptModal } from "@/components/Modal";
 import Preview from "@/components/Preview";
 import { download, transferBusy } from "@/stores/download";
@@ -33,6 +35,7 @@ import {
   currentStorage,
   enterFolder,
   entries,
+  folderLoading,
   goToDepth,
   reloadAll,
   removeEntries,
@@ -122,6 +125,9 @@ const Listing: Component = () => {
   const [previewing, setPreviewing] = createSignal<string | null>(null);
 
   let scrollEl: HTMLDivElement | undefined;
+
+  /** The loading state, but only once the wait is worth reporting. */
+  const slowLoad = createDelayed(folderLoading, SPINNER_DELAY_MS);
 
   const virtualizer = createVirtualizer({
     // A getter, not a value: this is what makes the option reactive, so a new
@@ -453,6 +459,23 @@ const Listing: Component = () => {
           when={storageId()}
           fallback={<div class="p-3 text-xs text-fg-muted">{t()("listing.empty")}</div>}
         >
+          {/* Loading takes priority over "this folder is empty", and the order
+              matters: while a folder is being read there are no rows yet, and
+              the empty-folder message would be a confident answer given before
+              the question was asked. */}
+          <Show
+            when={!folderLoading()}
+            fallback={
+              // Blank until the wait is long enough to be worth mentioning —
+              // see `createDelayed`. A spinner on a folder that answers in
+              // 20 ms is a flicker, not information.
+              <Show when={slowLoad()}>
+                <div class="p-3">
+                  <Spinner label={t()("listing.loading")} />
+                </div>
+              </Show>
+            }
+          >
           <Show
             when={entries().length}
             fallback={
@@ -571,6 +594,7 @@ const Listing: Component = () => {
             </div>
 
             <StripeFiller count={entries().length} onClick={clearSelection} />
+          </Show>
           </Show>
         </Show>
       </div>

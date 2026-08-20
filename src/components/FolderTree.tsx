@@ -3,6 +3,8 @@ import { ChevronDown, ChevronRight, Folder, FolderOpen, HardDrive } from "lucide
 import { api } from "@/ipc/client";
 import type { EntryDto } from "@/ipc/types";
 import { t } from "@/i18n";
+import { createDelayed, SPINNER_DELAY_MS } from "@/lib/delayed";
+import Spinner from "@/components/Spinner";
 import { type Crumb, crumbs, currentStorage, goToPath, storageId, treeVersion } from "@/stores/browser";
 
 /**
@@ -31,6 +33,8 @@ const Node: Component<{
   const [expanded, setExpanded] = createSignal(props.depth === 0);
   const [children, setChildren] = createSignal<EntryDto[] | null>(null);
   const [loading, setLoading] = createSignal(false);
+  /** Only once the branch has kept the user waiting. */
+  const slowLoad = createDelayed(loading, SPINNER_DELAY_MS);
 
   // Re-reads on expand and whenever something changed the device. Without the
   // `treeVersion()` read, a folder created or deleted in the listing would stay
@@ -92,7 +96,23 @@ const Node: Component<{
       </div>
 
       <Show when={expanded()}>
-        <Show when={!loading() || children()} fallback={<div class="px-2 py-1 text-xs text-fg-muted" style={{ "padding-left": `${(props.depth + 1) * 12 + 8}px` }}>…</div>}>
+        {/* The same delayed spinner as the listing, for the same reason: a
+            branch that answers in 20 ms should not blink. A branch opened for
+            the first time over a slow cable can take seconds, and until now
+            said so with a single "…". */}
+        <Show
+          when={!loading() || children()}
+          fallback={
+            <Show when={slowLoad()}>
+              <div
+                class="py-1"
+                style={{ "padding-left": `${(props.depth + 1) * 12 + 8}px` }}
+              >
+                <Spinner label={t()("listing.loading")} size={12} />
+              </div>
+            </Show>
+          }
+        >
           <For each={children() ?? []}>
             {(child) => (
               <Node
