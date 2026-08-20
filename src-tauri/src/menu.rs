@@ -13,6 +13,23 @@
 //! fields: the rename and new-folder dialogs. So Edit stays, even though it is
 //! not in the request.
 //!
+//! # This menu is installed on every platform, deliberately
+//!
+//! The request was about the macOS menu, and the shape here is a macOS idiom:
+//! the first submenu becomes the application menu, with About and Quit inside
+//! it. Windows and Linux render it as an in-window menu bar instead, where an
+//! "ADX" menu holding those items reads as a slightly unusual "File".
+//!
+//! Gating it to macOS was the alternative and was rejected for one reason:
+//! «Проверить наличие обновлений…» has no other entry point anywhere in the
+//! interface, so on the other two systems the feature would simply not exist.
+//! Settings would survive — the sidebar footer carries the same two controls —
+//! but the update check would not.
+//!
+//! Not verified off macOS: nobody has launched the Windows or Linux builds of
+//! this application at all, and that is true of the menu as much as everything
+//! else in them.
+//!
 //! # Why the menu is rebuilt instead of built once
 //!
 //! Menu labels are baked at construction, in Rust, before the web view has
@@ -112,7 +129,11 @@ pub fn build<R: Runtime, M: Manager<R>>(app: &M, locale: &str) -> tauri::Result<
 
     let metadata = AboutMetadata {
         name: Some("ADX".into()),
-        version: Some(env!("CARGO_PKG_VERSION").into()),
+        // From the bundle, not `CARGO_PKG_VERSION` — the two are separate
+        // fields (`src-tauri/Cargo.toml` and `tauri.conf.json`) that have
+        // already disagreed once in this project. The About panel must show
+        // what the user actually installed.
+        version: Some(app.package_info().version.to_string()),
         comments: Some(l.comments.into()),
         license: Some("Apache-2.0".into()),
         website: Some("https://github.com/thothlab/adx".into()),

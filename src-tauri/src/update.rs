@@ -30,7 +30,7 @@ const LATEST: &str = "https://api.github.com/repos/thothlab/adx/releases/latest"
 
 /// GitHub refuses requests without one, with a 403 that looks nothing like the
 /// missing header that caused it.
-const USER_AGENT: &str = concat!("ADX/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = "ADX";
 
 #[derive(Debug, Deserialize)]
 struct GithubRelease {
@@ -79,8 +79,19 @@ fn is_newer(latest: &str, current: &str) -> bool {
 }
 
 #[tauri::command]
-pub async fn check_update() -> Result<UpdateCheck, String> {
-    let current = env!("CARGO_PKG_VERSION").to_string();
+pub async fn check_update<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Result<UpdateCheck, String> {
+    // The version the *bundle* carries, not `CARGO_PKG_VERSION`.
+    //
+    // They are two different fields — `src-tauri/Cargo.toml` and
+    // `tauri.conf.json` — and this project has already been bitten by them
+    // disagreeing: the 1.0.0 tag would have shipped installers named 0.1.0 if
+    // only one had been bumped. Here the cost of the same slip is worse than a
+    // filename: a user on 1.1.0 would be told they are on 1.0.0 and offered an
+    // "update" to the build already running. `package_info()` reads what the
+    // installer and the About panel read.
+    let current = app.package_info().version.to_string();
 
     let response = reqwest::Client::builder()
         // Bounded on purpose: this runs from a menu click and the user is
