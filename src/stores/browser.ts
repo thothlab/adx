@@ -140,6 +140,35 @@ export async function loadEntries(): Promise<void> {
   }
 }
 
+/**
+ * Re-ask the open device what storages it has.
+ *
+ * Separate from `openDevice` because the answer changes without the connection
+ * changing: a locked phone opens an MTP session and reports **zero** storages,
+ * then reports them the moment the screen is unlocked. Nothing on the USB side
+ * moves when that happens, so no hotplug event fires and the device list looks
+ * exactly the same — the only way back is to ask again.
+ *
+ * Lands the user in the first storage, same as opening the device does. Getting
+ * storages and still showing an empty pane would be the same dead end one step
+ * further along.
+ */
+export async function refreshStorages(): Promise<void> {
+  if (!device()) return;
+  setBusy(true);
+  setBrowseError(null);
+  try {
+    const fresh = await api.storages.refresh();
+    setStorages(fresh);
+    const first = fresh[0];
+    if (first && !storageId()) await selectStorage(first.id);
+  } catch (e) {
+    setBrowseError(asAdxError(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
 /** Re-read the current folder, the tree and the free-space figures. */
 export async function reloadAll(): Promise<void> {
   await loadEntries();

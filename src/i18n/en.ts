@@ -51,6 +51,14 @@ const en = {
   storages: {
     title: "Storage",
     empty: "Select a device",
+    // The device answered, and its answer was "nothing". Deliberately does not
+    // claim the phone is locked — it is the usual cause, not the only one — but
+    // names it first, because unlocking the screen is what fixes it nine times
+    // out of ten and costs nothing to try.
+    none_title: "The device is not showing any storage",
+    none_hint:
+      "Unlock the phone screen, and confirm file transfer on it if it asks. The phone shows nothing until you do.",
+    none_retry: "Ask again",
     free_of: "{{free}} free of {{total}}",
     read_only: "Read-only",
   },

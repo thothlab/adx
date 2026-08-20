@@ -29,7 +29,7 @@ import Listing from "@/components/Listing";
 import Splitter from "@/components/Splitter";
 import StorageList from "@/components/StorageList";
 import { devices, error, loading, refreshDevices, selectDevice, selected, watchDevices } from "@/stores/devices";
-import { canWrite, closeDevice, openDevice } from "@/stores/browser";
+import { canWrite, closeDevice, openDevice, refreshStorages } from "@/stores/browser";
 import {
   resetSidebarWidth,
   resetTreeWidth,
@@ -196,7 +196,16 @@ const Layout: Component = () => {
           class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs hover:bg-bg-muted disabled:opacity-50"
           title={t()("devices.refresh")}
           disabled={loading()}
-          onClick={() => void refreshDevices()}
+          // Re-asks the open device too, not only the USB bus. The case that
+          // needs it: a locked phone opens a session and reports zero
+          // storages, and unlocking the screen changes nothing on the bus — so
+          // re-enumerating alone comes back with the identical list and the
+          // pane stays empty. This is the button a user presses first when
+          // something looks stuck, and it has to be the one that helps.
+          onClick={() => {
+            void refreshDevices();
+            void refreshStorages();
+          }}
         >
           <RefreshCw size={12} class={loading() ? "animate-spin" : undefined} />{" "}
           {t()("devices.refresh")}
