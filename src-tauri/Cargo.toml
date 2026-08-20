@@ -23,6 +23,11 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tauri = { version = "2", features = [] }
+# Already compiled as a dependency of `tauri` itself, so naming it here adds a
+# TLS backend and nothing else. `rustls` rather than the system one: it is the
+# same code on all three systems, and an update check that works on macOS and
+# quietly fails on Linux is worse than one that does not exist.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "charset", "http2"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"

@@ -9,9 +9,11 @@
 //! (commit 2df5e6c) because unit tests never launch the bundled app.
 
 mod commands;
+mod menu;
 mod state;
 mod stream;
 mod transfer;
+mod update;
 
 use tauri::{Emitter, Manager, RunEvent};
 
@@ -39,6 +41,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::default())
+        .menu(|app| {
+            // Russian, because that is the default locale until the front end
+            // says otherwise — it restores the user's choice from
+            // `localStorage` and reports it, and the menu is rebuilt then. The
+            // guess is only visible for the moment before the window loads.
+            menu::build(app, "ru")
+        })
+        .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
         .setup(|app| {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -62,6 +72,8 @@ pub fn run() {
             commands::entry_delete,
             commands::entry_rename,
             commands::entry_read,
+            menu::menu_set_locale,
+            update::check_update,
             transfer::upload_start,
             transfer::upload_cancel,
             transfer::download_start,

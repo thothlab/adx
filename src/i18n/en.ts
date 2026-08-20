@@ -132,7 +132,18 @@ const en = {
     conflict_replace: "Replace",
     conflict_skip: "Skip these",
   },
+  update: {
+    title: "Check for updates",
+    checking: "Asking GitHub…",
+    current: "You have the newest version.",
+    version: "Installed: {{version}}",
+    available: "Version {{version}} is available.",
+    open_page: "Open the release page",
+    unsigned:
+      "The builds are unsigned: macOS will ask you to confirm on first launch, and Windows will show SmartScreen.",
+  },
   settings: {
+    title: "Settings",
     theme: "Theme",
     theme_light: "Light",
     theme_dark: "Dark",

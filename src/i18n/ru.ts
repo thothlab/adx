@@ -128,7 +128,18 @@ const ru: Dict = {
     conflict_replace: "Заменить",
     conflict_skip: "Пропустить их",
   },
+  update: {
+    title: "Проверка обновлений",
+    checking: "Спрашиваем GitHub…",
+    current: "У вас самая новая версия.",
+    version: "Установлена: {{version}}",
+    available: "Доступна версия {{version}}.",
+    open_page: "Открыть страницу релиза",
+    unsigned:
+      "Сборки не подписаны: при первом запуске macOS попросит подтверждение, а Windows покажет SmartScreen.",
+  },
   settings: {
+    title: "Настройки",
     theme: "Тема",
     theme_light: "Светлая",
     theme_dark: "Тёмная",

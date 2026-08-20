@@ -13,6 +13,11 @@ import { createEffect, createSignal } from "solid-js";
 
 export type Theme = "light" | "dark" | "system";
 
+/** Every theme, in the order both the settings dialog lists them and the
+ *  footer button cycles them. One list: two orders that drifted apart would
+ *  make the same app disagree with itself about what comes after "light". */
+export const THEMES: readonly Theme[] = ["light", "dark", "system"];
+
 const STORAGE_KEY = "adx:theme";
 
 function loadStored(): Theme {
@@ -62,8 +67,7 @@ export function setTheme(t: Theme): void {
 }
 
 export function cycleTheme(): void {
-  const order: Theme[] = ["light", "dark", "system"];
-  setTheme(order[(order.indexOf(theme()) + 1) % order.length]!);
+  setTheme(THEMES[(THEMES.indexOf(theme()) + 1) % THEMES.length]!);
 }
 
 createEffect(() => {

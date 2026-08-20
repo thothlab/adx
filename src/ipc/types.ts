@@ -81,6 +81,19 @@ export interface DownloadRootDto {
   size: number;
 }
 
+/** Mirrors `UpdateCheck` in `src-tauri/src/update.rs`. */
+export interface UpdateCheck {
+  /** The running version. */
+  current: string;
+  /** Newest published release, without the leading `v`. */
+  latest: string;
+  /** Page to send the user to. */
+  url: string;
+  /** True only when `latest` is genuinely newer — a development build ahead of
+   *  the last release reports `false`, not an update backwards. */
+  outdated: boolean;
+}
+
 /** Mirrors `AdxError` in `crates/adx-core/src/error.rs`. The UI branches on
  *  `kind` and renders its own localised text; `message` is the technical
  *  detail shown on demand. */

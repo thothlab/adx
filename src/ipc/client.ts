@@ -10,6 +10,7 @@ import type {
   StorageDto,
   TransferOutcome,
   TransferProgress,
+  UpdateCheck,
 } from "./types";
 
 /**
@@ -43,6 +44,16 @@ export const api = {
      *  a JSON array of numbers — six times the size and parsed as text. */
     read: (storageId: string, handle: string, maxBytes: number) =>
       invoke<ArrayBuffer>("entry_read", { storageId, handle, maxBytes }),
+  },
+  menu: {
+    /** Rebuild the native menu in this language. The menu is built in Rust
+     *  before the window loads, so it cannot know the locale until told. */
+    setLocale: (locale: string) => invoke<void>("menu_set_locale", { locale }),
+  },
+  update: {
+    /** Ask GitHub what the newest published release is. Runs in Rust: the
+     *  window's CSP does not let the web view reach anything but itself. */
+    check: () => invoke<UpdateCheck>("check_update"),
   },
   upload: {
     start: (storageId: string, parent: string | null, paths: string[], policy: ConflictPolicy) =>
@@ -87,7 +98,14 @@ export const events = {
   devicesChanged: "devices-changed",
   uploadProgress: "upload-progress",
   downloadProgress: "download-progress",
+  /** A native menu item was chosen — payload is its id. */
+  menuAction: "menu-action",
 } as const;
+
+/** Subscribe to the native menu. Returns the unlisten function. */
+export function onMenuAction(fn: (id: string) => void): Promise<UnlistenFn> {
+  return listen<string>(events.menuAction, (e) => fn(e.payload));
+}
 
 export function onDevicesChanged(fn: (devices: DeviceDto[]) => void): Promise<UnlistenFn> {
   return listen<DeviceDto[]>(events.devicesChanged, (e) => fn(e.payload));

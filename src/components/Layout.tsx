@@ -21,13 +21,16 @@ import {
   SunMoon,
 } from "lucide-solid";
 import { LOCALES, locale, setLocale, t } from "@/i18n";
+import { api, onMenuAction } from "@/ipc/client";
 import { cycleTheme, theme } from "@/stores/theme";
 import DeviceList from "@/components/DeviceList";
 import FolderTree from "@/components/FolderTree";
 import Jobs from "@/components/Jobs";
 import Listing from "@/components/Listing";
+import Settings from "@/components/Settings";
 import Splitter from "@/components/Splitter";
 import StorageList from "@/components/StorageList";
+import UpdateCheck from "@/components/UpdateCheck";
 import { devices, error, loading, refreshDevices, selectDevice, selected, watchDevices } from "@/stores/devices";
 import { canWrite, closeDevice, openDevice, refreshStorages } from "@/stores/browser";
 import {
@@ -126,6 +129,20 @@ const SettingsFooter: Component = () => {
 
 const Layout: Component = () => {
   const [dragging, setDragging] = createSignal(false);
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [updateOpen, setUpdateOpen] = createSignal(false);
+
+  /**
+   * Keep the native menu speaking the interface language.
+   *
+   * The menu is built in Rust before this window exists, so it starts in the
+   * default language whatever the user last chose. This runs immediately with
+   * the restored locale and again on every switch — without it, «переключение
+   * языка меняет весь видимый текст» would stop being true at the menu bar.
+   */
+  createEffect(() => {
+    void api.menu.setLocale(locale());
+  });
 
   onMount(() => {
     // One enumeration at startup for devices already attached, then hotplug
@@ -151,12 +168,21 @@ const Layout: Component = () => {
       }
     });
 
+    // The native menu talks back over one event carrying the item's id, so a
+    // new item needs a case here rather than a listener on both sides. Quit is
+    // not among them: it is handled in Rust, because leaving should not depend
+    // on the web view being alive to hear about it.
+    const menu = onMenuAction((id) => {
+      if (id === "settings") setSettingsOpen(true);
+      else if (id === "check-updates") setUpdateOpen(true);
+    });
+
     // Every unlisten registered here, synchronously. `promise.then((un) =>
     // onCleanup(un))` looks equivalent and is not: by the time the callback
     // runs there is no reactive owner, so `onCleanup` silently does nothing and
     // the listener survives every hot reload. Stacked drop listeners mean one
     // drag from Finder starting the same upload several times.
-    const subscriptions = [watchDevices(), watchUploads(), watchDownloads(), dragDrop];
+    const subscriptions = [watchDevices(), watchUploads(), watchDownloads(), dragDrop, menu];
     onCleanup(() => {
       for (const pending of subscriptions) void pending.then((un) => un());
     });
@@ -272,6 +298,14 @@ const Layout: Component = () => {
             <Jobs />
           </Panel>
         </div>
+
+        <Show when={settingsOpen()}>
+          <Settings onClose={() => setSettingsOpen(false)} />
+        </Show>
+
+        <Show when={updateOpen()}>
+          <UpdateCheck onClose={() => setUpdateOpen(false)} />
+        </Show>
 
         <Show when={dragging()}>
           <div class="pointer-events-none absolute inset-0 z-40 flex items-center justify-center border-2 border-dashed border-accent bg-accent/10">
