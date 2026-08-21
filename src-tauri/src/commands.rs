@@ -175,13 +175,16 @@ pub async fn device_close(state: State<'_, AppState>) -> Result<(), AdxError> {
     Ok(())
 }
 
-/// Re-read free space. Called after anything that writes.
+/// Ask the device for its storages again.
+///
+/// Called after anything that writes, and by the two buttons a user reaches for
+/// when the storage panel is empty. The reopen that makes those buttons
+/// meaningful lives in `adx_mtp::storages_or_reopen` — a phone whose USB mode
+/// was switched leaves this session bound to a configuration that no longer
+/// exists, and no event announces it.
 #[tauri::command]
 pub async fn storages_refresh(state: State<'_, AppState>) -> Result<Vec<StorageDto>, AdxError> {
-    let mut guard = state.session.lock().await;
-    let session = guard.as_mut().ok_or_else(no_device)?;
-    Ok(session
-        .refresh_storages()
+    Ok(adx_mtp::storages_or_reopen(&state.session)
         .await?
         .into_iter()
         .map(to_storage_dto)

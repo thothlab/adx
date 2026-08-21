@@ -17,7 +17,55 @@ use std::path::Path;
 use adx_core::{AdxError, ErrorKind};
 use mtp_rs::mtp::{MtpDevice, NewObjectInfo, ObjectHandle, Storage, WindowedDownload};
 
-use crate::{map_error, MtpBackend, MtpRsBackend};
+use crate::{map_error, MtpBackend, MtpRsBackend, SessionSlot};
+
+/// Ask the open device for its storages, reopening the session if it cannot
+/// answer or answers with nothing.
+///
+/// This is what "Спросить снова" and «Обновить» run, and the reopen is the half
+/// that makes them worth pressing. Two situations reach here, and re-asking
+/// over the existing session fixes only one of them:
+///
+/// - The device had nothing to show when the session opened — a locked screen,
+///   or file transfer not yet confirmed on the phone — and has something now.
+///   Re-asking is enough.
+/// - The user changed the USB mode on the phone. That **re-enumerates the USB
+///   device**: the configuration this session is bound to no longer exists, so
+///   every request on it fails or returns nothing, while the device list still
+///   shows the same serial and looks perfectly healthy. Nothing short of
+///   opening again recovers it, and nothing emits an event to say so — which is
+///   why the app could sit there insisting a plugged-in, file-transfer-mode
+///   phone had no storage.
+///
+/// Reopening costs a session close and open (hundreds of milliseconds) and only
+/// happens when the cheap path already failed, so the common case pays nothing.
+pub async fn storages_or_reopen(slot: &SessionSlot) -> Result<Vec<StorageRef>, AdxError> {
+    let mut guard = slot.lock().await;
+    let session = guard
+        .as_mut()
+        .ok_or_else(|| AdxError::new(ErrorKind::NoDevice, "устройство не открыто"))?;
+    let serial = session.serial().to_string();
+
+    match session.refresh_storages().await {
+        Ok(list) if !list.is_empty() => return Ok(list),
+        Ok(_) => tracing::info!("{serial}: накопителей не показано, переоткрываем сессию"),
+        Err(e) => tracing::warn!("{serial}: не удалось перечитать накопители ({e}), переоткрываем"),
+    }
+
+    // The old session is dropped before the new one is opened: the device
+    // allows exactly one, and asking for a second while holding the first is
+    // how "устройство занято" gets reported against ourselves.
+    if let Some(previous) = guard.take() {
+        if let Err(e) = previous.close().await {
+            tracing::debug!("closing the stale session failed, continuing: {e}");
+        }
+    }
+
+    let reopened = Session::open(&serial).await?;
+    let storages = reopened.storages();
+    *guard = Some(reopened);
+    Ok(storages)
+}
 
 /// A storage volume on the device — internal memory, an SD card.
 ///
@@ -134,15 +182,23 @@ impl Session {
         self.storages.iter().map(|s| storage_ref(s)).collect()
     }
 
-    /// Re-read free space from the device.
+    /// Ask the device again which storages it has, and how much is free.
     ///
-    /// Called after anything that writes: a storage panel still claiming the
-    /// pre-transfer free space is the kind of stale number a user notices and
-    /// stops trusting the whole app over.
+    /// The whole list, not just fresh numbers for the list we already hold.
+    /// That distinction is the difference between a working "try again" and one
+    /// that cannot possibly work: a phone whose screen is locked opens a session
+    /// perfectly and reports **zero** storages, so the cached list is empty, and
+    /// refreshing each of its zero entries in a loop returns empty forever.
+    /// Unlocking the screen changes nothing on the USB bus, so no event arrives
+    /// to correct it either — asking again is the only way back, and it has to
+    /// be a real question.
+    ///
+    /// Also called after anything that writes: a storage panel still claiming
+    /// the pre-transfer free space is the kind of stale number a user notices
+    /// and stops trusting the whole app over. Re-reading the list covers that
+    /// too, because each entry comes back with its current numbers.
     pub async fn refresh_storages(&mut self) -> Result<Vec<StorageRef>, AdxError> {
-        for storage in &mut self.storages {
-            storage.refresh().await.map_err(|e| map_error(&e))?;
-        }
+        self.storages = self.device.storages().await.map_err(|e| map_error(&e))?;
         Ok(self.storages())
     }
 
@@ -395,6 +451,16 @@ fn validate_name(name: &str) -> Result<(), AdxError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// With nothing open there is no serial to reopen *by*, so this has to stop
+    /// rather than reach for a device. Everything past the guard needs real
+    /// hardware and is exercised by hand — see the note in the module docs.
+    #[tokio::test]
+    async fn asking_with_no_open_device_is_not_an_attempt_to_reopen() {
+        let slot: SessionSlot = tokio::sync::Mutex::new(None);
+        let err = storages_or_reopen(&slot).await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::NoDevice);
+    }
 
     fn entry(name: &str, is_folder: bool) -> Entry {
         Entry { handle: 1, name: name.into(), size: 0, is_folder, modified: None }

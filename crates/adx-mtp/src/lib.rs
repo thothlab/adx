@@ -20,7 +20,7 @@ pub use download::{
 };
 pub use error::map_error;
 pub use holder::exclusive_owner;
-pub use session::{Entry, Session, StorageRef, UploadFailure};
+pub use session::{storages_or_reopen, Entry, Session, StorageRef, UploadFailure};
 /// Exposed for `examples/probe`, not for the app: the merged list from
 /// [`MtpBackend::list_devices`] is the only one the UI should ever see. The
 /// probe needs the unmerged input to tell "dedup worked" apart from "there was
