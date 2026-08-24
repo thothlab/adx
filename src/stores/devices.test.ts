@@ -70,6 +70,28 @@ describe("applyList", () => {
    * the identity does not — and it must become selectable at that moment
    * without the user touching anything.
    */
+  /**
+   * The replug case, and the reason the rule is "not ready" rather than "gone":
+   * a terminal whose default USB mode is debugging comes back on the bus with
+   * the same serial and no MTP function on it. Holding the selection there
+   * means holding a session the device has already forgotten, and — because
+   * opening follows the selection — nothing would re-open it when file
+   * transfer appears a moment later.
+   */
+  it("drops the selection when the selected device comes back without file transfer", () => {
+    __test.applyList([device("A")]);
+    expect(selected()).toBe("A");
+    __test.applyList([device("A", "unauthorized")]);
+    expect(selected()).toBe(null);
+  });
+
+  it("takes it back the moment file transfer appears", () => {
+    __test.applyList([device("A")]);
+    __test.applyList([device("A", "unauthorized")]);
+    __test.applyList([device("A")]);
+    expect(selected()).toBe("A");
+  });
+
   it("picks up a device the moment it leaves charging-only mode", () => {
     __test.applyList([device("A", "unauthorized")]);
     expect(selected()).toBeNull();

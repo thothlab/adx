@@ -155,8 +155,13 @@ pub async fn device_open(
         }
     }
 
+    // Through the recovery path even when the session was already open, and
+    // *especially* then: a device replugged into the same port comes back with
+    // the same serial, so `already_open` is true while the session behind it is
+    // dead. Reading storages through the check is what turns "Обновить" into a
+    // reconnect instead of a re-ask of a handle nobody is holding any more.
+    let storages = adx_mtp::storages_or_reopen_locked(&mut guard).await?;
     let session = guard.as_mut().ok_or_else(no_device)?;
-    let storages = session.refresh_storages().await?;
 
     Ok(OpenedDeviceDto {
         serial: session.serial().to_string(),

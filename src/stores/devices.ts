@@ -42,8 +42,17 @@ function applyList(list: DeviceDto[]): void {
   setDevices(list);
   setError(null);
 
+  // The selection is dropped both when the device is gone and when it is still
+  // attached but no longer browsable — a replug brings the terminal back on the
+  // bus in USB-debugging mode, with no MTP function on it. Keeping it selected
+  // there means holding a session to a device that cannot answer, and — because
+  // opening follows the *selection* — nothing re-opens when the device becomes
+  // browsable again a moment later. Dropping it puts the auto-pick rule below
+  // back in charge, which is what makes "плюс режим передачи файлов" recover on
+  // its own.
   const current = selected();
-  if (current && !list.some((d) => d.serial === current)) {
+  const attached = list.find((d) => d.serial === current);
+  if (current && (!attached || attached.state !== "ready")) {
     setSelected(null);
   }
 
@@ -55,6 +64,16 @@ function applyList(list: DeviceDto[]): void {
     if (ready.length === 1) setSelected(ready[0].serial);
   }
 }
+
+/**
+ * Bumped by every Refresh. The shell watches it alongside the selection, so
+ * pressing the button re-opens the session even when the list came back
+ * identical — which is exactly the case the button is pressed in: same device,
+ * same serial, same port, but the session behind it died with the replug.
+ */
+const [reconnects, setReconnects] = createSignal(0);
+
+export { reconnects };
 
 export async function refreshDevices(): Promise<void> {
   setLoading(true);
@@ -73,6 +92,19 @@ export async function refreshDevices(): Promise<void> {
   } finally {
     setLoading(false);
   }
+}
+
+/**
+ * What the Refresh button does: re-ask the bus *and* re-open the session.
+ *
+ * Kept apart from `refreshDevices` because the startup enumeration calls that
+ * one, and bumping the counter there would open every device twice on launch.
+ * The button means "re-ask reality", and after a replug the stale thing is not
+ * the list — the list comes back identical — but the session behind it.
+ */
+export async function reconnectDevices(): Promise<void> {
+  await refreshDevices();
+  setReconnects(reconnects() + 1);
 }
 
 /**

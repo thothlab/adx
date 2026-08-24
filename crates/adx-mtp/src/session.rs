@@ -41,6 +41,19 @@ use crate::{map_error, MtpBackend, MtpRsBackend, SessionSlot};
 /// happens when the cheap path already failed, so the common case pays nothing.
 pub async fn storages_or_reopen(slot: &SessionSlot) -> Result<Vec<StorageRef>, AdxError> {
     let mut guard = slot.lock().await;
+    storages_or_reopen_locked(&mut guard).await
+}
+
+/// The same recovery, for a caller that already holds the session lock.
+///
+/// Split out for `device_open`: selecting a device the app believes is already
+/// open must not hand back the old session unchecked. A phone replugged into
+/// the same port comes back with the same serial and a session that no longer
+/// answers, and "already open" is then a lie that shows the user an empty
+/// pane no button can fix.
+pub async fn storages_or_reopen_locked(
+    guard: &mut Option<Session>,
+) -> Result<Vec<StorageRef>, AdxError> {
     let session = guard
         .as_mut()
         .ok_or_else(|| AdxError::new(ErrorKind::NoDevice, "устройство не открыто"))?;

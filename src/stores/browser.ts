@@ -263,6 +263,37 @@ export async function refreshStorages(): Promise<void> {
   }
 }
 
+/**
+ * Make sure the open session still answers, and put the pane back in order if
+ * it does not.
+ *
+ * Called after every settled burst of USB events, because that is the one
+ * moment a session can die without anything on screen changing: a device
+ * replugged into the same port comes back with the same serial and the same
+ * capabilities, and the app would go on showing rows it can no longer read.
+ *
+ * The storages go first on purpose — that call is the one that reopens a dead
+ * session (`storages_or_reopen` in the backend) — and the listing follows it,
+ * so the rows belong to the session that is actually open. Doing it the other
+ * way round reads the folder through the dead handle and shows an error for a
+ * device that is fine.
+ */
+export async function revalidate(serial: string | null): Promise<void> {
+  if (!serial) return;
+
+  // No session at all — the device was closed while it was off the bus, or the
+  // app never got to open it. Opening is not overreach here: `serial` is the
+  // device the user chose, and leaving it selected but closed is the state that
+  // shows a chosen device with an empty pane and no way out.
+  if (!device()) {
+    await openDevice(serial);
+    return;
+  }
+
+  await refreshStorages();
+  await loadEntries();
+}
+
 /** Re-read the current folder, the tree and the free-space figures. */
 export async function reloadAll(): Promise<void> {
   await loadEntries();

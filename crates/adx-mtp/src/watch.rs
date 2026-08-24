@@ -53,8 +53,17 @@ use crate::{DiscoveredDevice, MtpBackend, MtpRsBackend};
 /// updates while the user is still looking at the phone.
 pub const SETTLE_DELAY: Duration = Duration::from_millis(700);
 
-/// Watch USB and call `on_change` with the full device list whenever it
-/// actually differs from the last one reported.
+/// Watch USB and call `on_change` with the full device list after every settled
+/// burst of events.
+///
+/// After *every* burst, not only when the list differs, and that is the whole
+/// difference between a list that follows the cable and a session that does.
+/// A device replugged into the same port comes back with the same serial, the
+/// same location and the same capabilities — identical in every field this
+/// crate reports — while the session behind it is dead. Suppressing that as
+/// "no change" left the app showing a device it could no longer read, with
+/// nothing on screen to say so. The list comparison stays, but only to decide
+/// what to write in the log.
 ///
 /// Never returns while the watch is alive. Errors setting up the watch are
 /// logged and swallowed: hotplug is an enhancement over the Refresh button, and
@@ -111,19 +120,28 @@ where
 
         if changed(last.as_deref(), &devices) {
             tracing::info!("device list changed: {} attached", devices.len());
-            last = Some(devices.clone());
-            on_change(devices);
+        } else {
+            // Same devices, new connections: a replug into the same port looks
+            // exactly like this, and it is the case the app has to recover from.
+            tracing::info!("bus settled, list unchanged: {} attached", devices.len());
         }
+        last = Some(devices.clone());
+        on_change(devices);
     }
 }
 
-/// Whether the new list is worth telling the UI about.
+/// Whether the new list differs from the previous one.
+///
+/// Only the log line depends on this now — the UI is told either way. It stays
+/// because the two cases read very differently when something has gone wrong:
+/// "device list changed" after a cable event is ordinary, while the same event
+/// producing an unchanged list is the signature of a replug into the same port,
+/// which is when a session dies quietly.
 ///
 /// Compares whole devices, not just identity. A phone switching from
 /// charging-only to file transfer keeps its location and often its serial while
 /// `mtp_available` flips — an identity-only comparison would call that "no
-/// change" and leave the user staring at "pick file transfer mode" on a phone
-/// where they just did.
+/// change".
 fn changed(prev: Option<&[DiscoveredDevice]>, next: &[DiscoveredDevice]) -> bool {
     prev != Some(next)
 }

@@ -31,8 +31,24 @@ import Settings from "@/components/Settings";
 import Splitter from "@/components/Splitter";
 import StorageList from "@/components/StorageList";
 import UpdateCheck from "@/components/UpdateCheck";
-import { devices, error, loading, refreshDevices, selectDevice, selected, watchDevices } from "@/stores/devices";
-import { canWrite, closeDevice, openDevice, refreshStorages } from "@/stores/browser";
+import {
+  devices,
+  error,
+  loading,
+  reconnectDevices,
+  reconnects,
+  refreshDevices,
+  selectDevice,
+  selected,
+  watchDevices,
+} from "@/stores/devices";
+import {
+  canWrite,
+  closeDevice,
+  openDevice,
+  refreshStorages,
+  revalidate,
+} from "@/stores/browser";
 import {
   resetSidebarWidth,
   resetTreeWidth,
@@ -195,14 +211,49 @@ const Layout: Component = () => {
     });
   });
 
-  // Opening and closing follow the selection, and only the selection. `on(...,
-  // { defer: false })` with an explicit dependency keeps this from re-running
-  // when the device list refreshes for unrelated reasons — re-opening a working
-  // session is a visible stall and a window in which a transfer would fail.
+  // Opening and closing follow the selection — and, deliberately, one more
+  // thing: the Refresh counter. An explicit dependency list keeps this from
+  // re-running when the device list changes for unrelated reasons (re-opening a
+  // working session is a visible stall and a window in which a transfer would
+  // fail), but a device replugged into the same port comes back with the same
+  // serial, so the selection alone cannot tell "still connected" from
+  // "connected again". Refresh is the user saying it is the second one.
+  //
+  // Not while a transfer is running: the session is in use, and re-opening it
+  // under a copy in flight would break it. The list still refreshes.
+  /**
+   * Every settled burst of USB events is a reason to check the session, not
+   * only the list.
+   *
+   * The backend now reports after each burst even when the list comes back
+   * identical, because that is precisely what a replug into the same port looks
+   * like: same serial, same port, same capabilities — and a session that no
+   * longer answers. `revalidate` re-reads the storages (which reopens a dead
+   * session) and then the folder, so the pane repairs itself without the user
+   * pressing anything.
+   *
+   * Not during a transfer: the session is in use, and the copy in flight would
+   * be the thing paying for the check.
+   */
   createEffect(
-    on(selected, (serial) => {
-      if (serial) void openDevice(serial);
-      else void closeDevice();
+    on(
+      devices,
+      () => {
+        if (transferBusy()) return;
+        void revalidate(selected());
+      },
+      { defer: true },
+    ),
+  );
+
+  createEffect(
+    on([selected, reconnects], ([serial]) => {
+      if (!serial) {
+        void closeDevice();
+        return;
+      }
+      if (transferBusy()) return;
+      void openDevice(serial);
     }),
   );
 
@@ -236,7 +287,7 @@ const Layout: Component = () => {
           // pane stays empty. This is the button a user presses first when
           // something looks stuck, and it has to be the one that helps.
           onClick={() => {
-            void refreshDevices();
+            void reconnectDevices();
             void refreshStorages();
           }}
         >
