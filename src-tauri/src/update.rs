@@ -1,16 +1,23 @@
 //! «Проверить наличие обновлений…» — asking GitHub what the newest release is.
 //!
-//! # Why this is not `tauri-plugin-updater`
+//! # Why this exists next to `tauri-plugin-updater`
 //!
-//! That plugin downloads and installs, and to do it safely it verifies a
-//! signature against a public key baked into the bundle. This project has no
-//! signing key — the releases are unsigned, which the README and the release
-//! notes both say out loud. An updater that fetched and ran an unverified
-//! binary would be a worse thing than no updater: it would turn "we don't sign"
-//! from an inconvenience into a remote code execution path.
+//! Since 1.0.5 the app can install updates itself: every release is signed with
+//! the project's update key (minisign — the public half is in
+//! `tauri.conf.json`, the private half is a repository secret used by CI), and
+//! the plugin refuses anything that does not match. That is what makes the
+//! button safe; an updater that ran an unverified binary would turn "our builds
+//! carry no Apple signature" from an inconvenience into a remote code execution
+//! path.
 //!
-//! So this checks and tells. Installing stays a thing the user does knowingly,
-//! from a page they can look at.
+//! This check stays because it answers a question the plugin cannot. The plugin
+//! reads a manifest attached to the newest release, so a release published
+//! before the updater existed, or one whose signing step failed, is simply
+//! invisible to it — and "no update available" is exactly the wrong thing to
+//! tell someone running a version from six months ago. Asking GitHub what the
+//! newest release *is* has no such blind spot, and the dialog uses the two
+//! together: this one decides whether there is news, the plugin decides whether
+//! it can be installed from here or has to be fetched from the page by hand.
 //!
 //! # Why it is in Rust rather than in the web view
 //!

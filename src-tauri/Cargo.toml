@@ -32,6 +32,12 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-shell = "2"
+# Самообновление. Ставит только то, что сошлось по подписи minisign - публичная
+# половина ключа лежит в tauri.conf.json, приватная у CI в секретах репозитория.
+tauri-plugin-updater = "2"
+# Перезапуск после установки: без него обновлённое приложение пришлось бы
+# закрывать и открывать руками, то есть ровно то, от чего мы уходим.
+tauri-plugin-process = "2"
 
 # macOS-only: перетаскивание с устройства в Finder держится на file promises
 # (NSFilePromiseProvider) - Finder создаёт файл в момент дропа и просит нас его

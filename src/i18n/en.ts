@@ -143,6 +143,12 @@ const en = {
     current: "You have the newest version.",
     version: "Installed: {{version}}",
     available: "Version {{version}} is available.",
+    install: "Download and install",
+    restart: "Restart now",
+    verified: "The update is downloaded and checked against the project's signing key before it replaces this app.",
+    downloading_start: "Starting the download…",
+    downloading: "Downloading: {{done}} of {{total}}",
+    installed: "Installed. It takes effect after a restart.",
     open_page: "Open the release page",
     unsigned:
       "The builds are unsigned: macOS will ask you to confirm on first launch, and Windows will show SmartScreen.",

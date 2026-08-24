@@ -9,6 +9,8 @@
     "core:window:allow-start-dragging",
     "dialog:default",
     "os:default",
-    "shell:default"
+    "shell:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }
