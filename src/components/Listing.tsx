@@ -3,7 +3,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { downloadDir } from "@tauri-apps/api/path";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import {
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Download,
   File as FileIcon,
   Folder,
@@ -19,6 +21,7 @@ import type { EntryDto } from "@/ipc/types";
 import { formatBytes } from "@/lib/format";
 import { createDelayed, SPINNER_DELAY_MS } from "@/lib/delayed";
 import { checkName } from "@/lib/names";
+import type { SortKey } from "@/lib/sort";
 import { afterClick, EMPTY_SELECTION, selectAll, type Selection } from "@/lib/selection";
 import { Dropdown, DropdownItem } from "@/components/Dropdown";
 import ErrorBanner from "@/components/ErrorBanner";
@@ -40,6 +43,8 @@ import {
   reloadAll,
   removeEntries,
   renameEntry,
+  sort,
+  sortBy,
   storageId,
 } from "@/stores/browser";
 import { upload } from "@/stores/transfer";
@@ -114,6 +119,37 @@ const StripeFiller: Component<{ count: number; onClick: () => void }> = (props) 
   );
 };
 
+/**
+ * One column header: a button as wide as its column, carrying the arrow when
+ * the listing is sorted by it.
+ *
+ * The button fills the header row rather than bringing padding of its own, and
+ * `HEADER_H` above stays the only thing that decides how tall the row is. That
+ * number is also the virtualizer's `scrollMargin` and the figure every row's
+ * transform subtracts, so a header that grew by the height of a chevron would
+ * push every row down by that much and leave the last one unreachable.
+ */
+const SortHeader: Component<{ column: SortKey; label: string; align?: "right" }> = (props) => (
+  <button
+    type="button"
+    class="flex h-full min-w-0 items-center gap-1 self-stretch px-2 hover:bg-bg-muted"
+    classList={{ "justify-end": props.align === "right" }}
+    onClick={() => sortBy(props.column)}
+  >
+    <span class="truncate">{props.label}</span>
+    {/* The slot is here whether or not this is the sorted column: an arrow that
+        appeared out of nothing would shove the label sideways on every click,
+        and the header would read as moving rather than as sorting. */}
+    <span class="flex w-3 shrink-0 justify-center">
+      <Show when={sort().key === props.column}>
+        <Show when={sort().dir === "asc"} fallback={<ChevronDown size={11} />}>
+          <ChevronUp size={11} />
+        </Show>
+      </Show>
+    </span>
+  </button>
+);
+
 const Listing: Component = () => {
   const [rows, setRows] = createSignal<Selection>(EMPTY_SELECTION);
   const [renaming, setRenaming] = createSignal<{ handle: string; name: string } | null>(null);
@@ -174,6 +210,30 @@ const Listing: Component = () => {
       clearSelection();
       if (scrollEl) scrollEl.scrollTop = 0;
     }),
+  );
+
+  /**
+   * A re-sorted listing goes back to the top.
+   *
+   * Kept apart from the folder-change effect above because it is a different
+   * event with a different answer. Under a new order the rows at the current
+   * scroll offset are entirely different ones, so holding the offset would show
+   * an arbitrary window into the new order — while the reason to click "Size"
+   * at all is to see one of its ends.
+   *
+   * The selection deliberately survives, unlike on a folder change: re-sorting
+   * the same folder leaves every handle in `picked` naming the object it named
+   * before, and the anchor with it, so a following Shift-click ranges over the
+   * new display order.
+   */
+  createEffect(
+    on(
+      sort,
+      () => {
+        if (scrollEl) scrollEl.scrollTop = 0;
+      },
+      { defer: true },
+    ),
   );
 
   const onRowClick = (handle: string, e: MouseEvent) =>
@@ -495,12 +555,12 @@ const Listing: Component = () => {
               class="sticky top-0 z-10 grid shrink-0 items-center border-b border-border bg-bg text-xs font-medium text-fg-subtle"
               style={{ height: `${HEADER_H}px`, "grid-template-columns": COLUMNS }}
             >
-              <div class="min-w-0 truncate px-2">{t()("listing.name")}</div>
-              <div class="px-2 text-right">{t()("listing.size")}</div>
+              <SortHeader column="name" label={t()("listing.name")} />
+              <SortHeader column="size" label={t()("listing.size")} align="right" />
               {/* Wide enough for "2026-08-17 08:19" on one line. At w-32 every
                   date wrapped, which doubled every row's height and made the
                   listing look like it was rendering badly. */}
-              <div class="whitespace-nowrap px-2">{t()("listing.modified")}</div>
+              <SortHeader column="modified" label={t()("listing.modified")} />
             </div>
 
             {/* Only the rows in view exist in the DOM. A folder of 5000 objects

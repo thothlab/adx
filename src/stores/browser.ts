@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { api, asAdxError } from "@/ipc/client";
 import type { AdxError, EntryDto, OpenedDeviceDto, StorageDto } from "@/ipc/types";
+import { DEFAULT_SORT, nextSort, type Sort, type SortKey, sortEntries } from "@/lib/sort";
 
 /**
  * Browsing state: the open device, its storages, where the user is, and what
@@ -27,6 +28,16 @@ const [busy, setBusy] = createSignal(false);
 const [browseError, setBrowseError] = createSignal<AdxError | null>(null);
 
 /**
+ * Which column the listing is ordered by, and which way.
+ *
+ * Held here rather than in the component, and not reset when the user changes
+ * folder: an order is a decision about how the user wants to read a device,
+ * not about one folder. Resetting it on every navigation would mean re-picking
+ * "newest first" in each folder they open.
+ */
+const [sort, setSort] = createSignal<Sort>(DEFAULT_SORT);
+
+/**
  * Bumped whenever something on the device changed. The folder tree watches it
  * and re-reads the branches it has expanded — without it a folder created or
  * deleted in the listing would stay visible in the tree until the user
@@ -34,7 +45,23 @@ const [browseError, setBrowseError] = createSignal<AdxError | null>(null);
  */
 const [treeVersion, bumpTreeVersion] = createSignal(0);
 
-export { browseError, busy, crumbs, device, entries, storageId, storages, treeVersion };
+export { browseError, busy, crumbs, device, entries, sort, storageId, storages, treeVersion };
+
+/**
+ * Handle a click on a column header.
+ *
+ * The rows already on screen are re-ordered rather than re-read: the order is
+ * this side's business, and asking the device again would be a folder read
+ * over USB that comes back with exactly the same objects.
+ *
+ * `entries()` is therefore always in display order, which is what the
+ * selection depends on — a Shift-range is a range of *rows*.
+ */
+export function sortBy(key: SortKey): void {
+  const next = nextSort(sort(), key);
+  setSort(next);
+  setEntries(sortEntries(entries(), next));
+}
 
 export function currentStorage(): StorageDto | undefined {
   const id = storageId();
@@ -186,7 +213,11 @@ export async function loadEntries(): Promise<void> {
     // Superseded while we waited: whatever came back describes a folder the
     // user has already left, and writing it now would undo the newer request.
     if (mine !== latestRequest) return;
-    setEntries(list);
+    // Sorted on arrival, not on read: every re-read of the folder goes through
+    // here — including the one after a rename or a delete — and rows written
+    // raw would snap the listing back to the device's own order under the
+    // user's chosen one.
+    setEntries(sortEntries(list, sort()));
     setShownFolder(key);
   } catch (e) {
     if (mine !== latestRequest) return;
