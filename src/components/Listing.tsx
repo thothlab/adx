@@ -21,6 +21,7 @@ import type { EntryDto } from "@/ipc/types";
 import { formatBytes } from "@/lib/format";
 import { createDelayed, SPINNER_DELAY_MS } from "@/lib/delayed";
 import { checkName } from "@/lib/names";
+import { pastThreshold, rowsForDrag } from "@/lib/drag";
 import type { SortKey } from "@/lib/sort";
 import { afterClick, EMPTY_SELECTION, selectAll, type Selection } from "@/lib/selection";
 import { Dropdown, DropdownItem } from "@/components/Dropdown";
@@ -28,7 +29,7 @@ import ErrorBanner from "@/components/ErrorBanner";
 import Spinner from "@/components/Spinner";
 import { Button, ConfirmModal, PromptModal } from "@/components/Modal";
 import Preview from "@/components/Preview";
-import { download, transferBusy } from "@/stores/download";
+import { download, dragOut, transferBusy } from "@/stores/download";
 import {
   browseError,
   busy,
@@ -236,6 +237,47 @@ const Listing: Component = () => {
     ),
   );
 
+  /**
+   * Dragging rows out to Finder.
+   *
+   * Not HTML5 `dragstart`: inside WKWebView that starts the web view's own drag
+   * session, and the native one — the only kind that can hand a file to Finder
+   * — cannot be started on top of it. So the gesture is watched by hand: button
+   * down, and once the pointer has moved far enough, the system takes over.
+   *
+   * The listeners go on `window` rather than the row: a drag leaves the row
+   * within the first few pixels, and a `mouseup` outside it would otherwise
+   * never arrive and leave the gesture armed.
+   */
+  const onRowMouseDown = (entry: EntryDto, e: MouseEvent) => {
+    // Left button only, and never during a transfer: the device has one
+    // session, so a second copy would not fail — it would sit on the lock and
+    // look frozen. Same rule as the toolbar's.
+    if (e.button !== 0 || transferBusy() || !storageId()) return;
+    const fromX = e.clientX;
+    const fromY = e.clientY;
+
+    const move = (m: MouseEvent) => {
+      if (!pastThreshold(fromX, fromY, m.clientX, m.clientY)) return;
+      stop();
+      const dragged = rowsForDrag(entries(), picked(), entry);
+      // A row outside the selection becomes the selection first: dragging rows
+      // that carry no visible mark copies things the user cannot see they
+      // asked for.
+      if (!picked().has(entry.handle)) {
+        setRows({ picked: new Set([entry.handle]), anchor: entry.handle });
+      }
+      void dragOut(dragged.map(asRoot));
+    };
+    const stop = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", stop);
+    };
+
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", stop);
+  };
+
   const onRowClick = (handle: string, e: MouseEvent) =>
     setRows(
       afterClick(handles(), rows(), handle, {
@@ -280,13 +322,14 @@ const Listing: Component = () => {
    * re-read the folder to learn what is a folder and how big each file is —
    * that is a device round trip per row for information the listing has.
    */
-  const roots = () =>
-    selection().map((e) => ({
-      handle: e.handle,
-      name: e.name,
-      isFolder: e.isFolder,
-      size: e.size,
-    }));
+  const asRoot = (e: EntryDto) => ({
+    handle: e.handle,
+    name: e.name,
+    isFolder: e.isFolder,
+    size: e.size,
+  });
+
+  const roots = () => selection().map(asRoot);
 
   const saveTo = async (dest: string | null) => {
     if (dest) await download(roots(), dest);
@@ -612,6 +655,7 @@ const Listing: Component = () => {
                           "bg-bg-subtle hover:bg-bg-muted":
                             !picked().has(entry().handle) && row.index % 2 === 1,
                         }}
+                        onMouseDown={(e) => onRowMouseDown(entry(), e)}
                         onClick={(e) => onRowClick(entry().handle, e)}
                         onDblClick={() => {
                           if (entry().isFolder) {

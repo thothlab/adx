@@ -32,3 +32,13 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-shell = "2"
+
+# macOS-only: перетаскивание с устройства в Finder держится на file promises
+# (NSFilePromiseProvider) - Finder создаёт файл в момент дропа и просит нас его
+# написать. Ни Windows, ни Linux такого механизма не дают, поэтому зависимости
+# и код за ним - под таргетом, а не в общем разделе.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSOperation", "NSError", "NSGeometry", "NSThread"] }
+objc2-app-kit = { version = "0.3", features = ["NSFilePromiseProvider", "NSPasteboard", "NSPasteboardItem", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSView", "NSResponder", "NSApplication", "NSEvent", "NSImage", "NSWindow", "NSGraphics"] }
+block2 = "0.6"

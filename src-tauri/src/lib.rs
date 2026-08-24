@@ -9,6 +9,7 @@
 //! (commit 2df5e6c) because unit tests never launch the bundled app.
 
 mod commands;
+mod dragout;
 mod menu;
 mod state;
 mod stream;
@@ -78,6 +79,7 @@ pub fn run() {
             transfer::upload_cancel,
             transfer::download_start,
             transfer::download_cancel,
+            dragout::drag_out_start,
         ])
         .build(tauri::generate_context!())
         .expect("error while building ADX")

@@ -5,6 +5,7 @@ import type {
   ConflictPolicy,
   DeviceDto,
   DownloadRootDto,
+  DragDone,
   EntryDto,
   OpenedDeviceDto,
   StorageDto,
@@ -44,6 +45,14 @@ export const api = {
      *  a JSON array of numbers — six times the size and parsed as text. */
     read: (storageId: string, handle: string, maxBytes: number) =>
       invoke<ArrayBuffer>("entry_read", { storageId, handle, maxBytes }),
+  },
+  drag: {
+    /** Start dragging the selected rows into Finder. Returns as soon as the
+     *  system has the drag session: the files are asked for after the drop,
+     *  and where they go is decided by where the user lets go. macOS only —
+     *  everywhere else the command answers `unsupported`. */
+    start: (storageId: string, roots: DownloadRootDto[]) =>
+      invoke<void>("drag_out_start", { storageId, roots }),
   },
   menu: {
     /** Rebuild the native menu in this language. The menu is built in Rust
@@ -98,6 +107,8 @@ export const events = {
   devicesChanged: "devices-changed",
   uploadProgress: "upload-progress",
   downloadProgress: "download-progress",
+  /** A copy started by a drop into Finder finished — or failed. */
+  dragDone: "drag-download-done",
   /** A native menu item was chosen — payload is its id. */
   menuAction: "menu-action",
 } as const;
@@ -117,6 +128,10 @@ export function onUploadProgress(fn: (p: TransferProgress) => void): Promise<Unl
 
 export function onDownloadProgress(fn: (p: TransferProgress) => void): Promise<UnlistenFn> {
   return listen<TransferProgress>(events.downloadProgress, (e) => fn(e.payload));
+}
+
+export function onDragDone(fn: (done: DragDone) => void): Promise<UnlistenFn> {
+  return listen<DragDone>(events.dragDone, (e) => fn(e.payload));
 }
 
 /** Tauri rejects with whatever the command's error type serialised to. Ours is

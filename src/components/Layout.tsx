@@ -42,7 +42,7 @@ import {
   sidebarWidth,
   treeWidth,
 } from "@/stores/panes";
-import { transferBusy, watchDownloads } from "@/stores/download";
+import { transferBusy, watchDownloads, watchDragDrops } from "@/stores/download";
 import { upload, watchUploads } from "@/stores/transfer";
 
 /**
@@ -182,7 +182,14 @@ const Layout: Component = () => {
     // runs there is no reactive owner, so `onCleanup` silently does nothing and
     // the listener survives every hot reload. Stacked drop listeners mean one
     // drag from Finder starting the same upload several times.
-    const subscriptions = [watchDevices(), watchUploads(), watchDownloads(), dragDrop, menu];
+    const subscriptions = [
+      watchDevices(),
+      watchUploads(),
+      watchDownloads(),
+      watchDragDrops(),
+      dragDrop,
+      menu,
+    ];
     onCleanup(() => {
       for (const pending of subscriptions) void pending.then((un) => un());
     });

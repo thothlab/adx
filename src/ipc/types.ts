@@ -39,6 +39,16 @@ export interface OpenedDeviceDto {
   storages: StorageDto[];
 }
 
+/**
+ * Mirrors `DragDoneDto` — how a copy started by a drop into Finder ended.
+ *
+ * A separate event rather than the command's answer: the command returns as
+ * soon as the system takes the drag session, which is minutes before the user
+ * lets go of the mouse.
+ */
+export type DragDone =
+  { status: "done"; outcome: TransferOutcome } | { status: "failed"; error: AdxError };
+
 /** What to do with names that already exist in the target folder — on the
  *  device when uploading, on this computer when downloading. */
 export type ConflictPolicy = "ask" | "replace" | "skip";

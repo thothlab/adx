@@ -301,6 +301,24 @@ pub async fn download_start(
     dest: String,
     policy: PolicyDto,
 ) -> Result<DownloadOutcomeDto, AdxError> {
+    run_download(app, &state, storage_id, roots, dest, policy).await
+}
+
+/// The download itself, without the command wrapper.
+///
+/// Split out because a drop in Finder starts the same transfer from the other
+/// end: the promise handler in `dragout` has an `AppHandle` and a destination
+/// the system chose, and nothing else about it differs. Two copies of this
+/// would be two places to keep the busy flag, the cancel flag and the progress
+/// throttle in step.
+pub async fn run_download(
+    app: AppHandle,
+    state: &AppState,
+    storage_id: String,
+    roots: Vec<DownloadRootDto>,
+    dest: String,
+    policy: PolicyDto,
+) -> Result<DownloadOutcomeDto, AdxError> {
     let _busy = Busy::claim(&state.transferring);
     let storage = token(&storage_id)?;
     let roots: Vec<DownloadRoot> = roots

@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { api, asAdxError, onDownloadProgress } from "@/ipc/client";
+import { api, asAdxError, onDownloadProgress, onDragDone } from "@/ipc/client";
 import type {
   AdxError,
   ConflictPolicy,
@@ -111,7 +111,57 @@ export async function cancelDownload(): Promise<void> {
   }
 }
 
-/** Subscribe to progress events. Returns the unlisten function. */
+/**
+ * Hand the selected rows to the system as a drag into Finder.
+ *
+ * Nothing is copied here: the command returns as soon as the system has the
+ * drag session, and the transfer starts only if the user drops the rows
+ * somewhere that accepts them. Where they land is the drop point, so there is
+ * no destination to pass and no folder to pick.
+ */
+export async function dragOut(roots: DownloadRootDto[]): Promise<void> {
+  const id = storageId();
+  if (!id || roots.length === 0) return;
+  try {
+    await api.drag.start(id, roots);
+  } catch (e) {
+    const problem = asAdxError(e);
+    // `unsupported` is the honest answer on Windows and Linux, where the system
+    // has no equivalent of file promises. Reporting it would put an error
+    // banner under every attempted drag for a feature that is simply not there
+    // — while the "Copy to computer" button is, and does the same job.
+    if (problem.kind !== "unsupported") setDownloadError(problem);
+  }
+}
+
+/**
+ * Subscribe to progress events. Returns the unlisten function.
+ *
+ * `running` is set here, not only in `download()`, because a copy can also be
+ * started from outside this store: dropping rows into Finder makes the backend
+ * run the same transfer, and the toolbar has to grey out for it too — the
+ * device has one session either way.
+ */
 export function watchDownloads(): Promise<() => void> {
-  return onDownloadProgress(setProgress);
+  return onDownloadProgress((p) => {
+    setProgress(p);
+    setRunning(true);
+  });
+}
+
+/**
+ * Subscribe to the end of a copy started by a drop into Finder.
+ *
+ * The command that starts the drag returns before the user has let go, so this
+ * event is the only thing that can clear the progress row — without it a drop
+ * would leave the operations panel showing a transfer that finished minutes
+ * ago.
+ */
+export function watchDragDrops(): Promise<() => void> {
+  return onDragDone((done) => {
+    if (done.status === "failed") setDownloadError(done.error);
+    else setSummary(done.outcome);
+    setRunning(false);
+    setProgress(null);
+  });
 }
