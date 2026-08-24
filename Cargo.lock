@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "adx-app"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "adx-core",
  "adx-mtp",
@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "adx-core"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "adx-mtp"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "adx-core",
  "futures",
