@@ -62,8 +62,11 @@ mod imp {
     /// параллельные скачивания всё равно выстроились бы в очередь - но уже
     /// внутри бэкенда, на мьютексе, где о них некому рассказать: панель
     /// операций показала бы одну передачу, а телефон читал бы вторую.
-    fn promise_queue(mtm: MainThreadMarker) -> Retained<NSOperationQueue> {
-        let _ = mtm;
+    fn promise_queue() -> Retained<NSOperationQueue> {
+        // `thread_local`, а не глобальная статика: `Retained` не `Sync`. Это не
+        // ограничение, а описание факта - очередь спрашивают только из
+        // `operationQueueForFilePromiseProvider:`, а его AppKit зовёт с
+        // главного потока.
         thread_local! {
             static QUEUE: RefCell<Option<Retained<NSOperationQueue>>> = const { RefCell::new(None) };
         }
@@ -89,9 +92,11 @@ mod imp {
         root: DownloadRootDto,
     }
 
+    // Не `MainThreadOnly`: `writePromiseToURL:` приходит с нашей очереди, то
+    // есть с фонового потока, и класс, объявивший себя главнопоточным, обещал
+    // бы то, что мы сами же нарушаем.
     define_class!(
         #[unsafe(super(NSObject))]
-        #[thread_kind = MainThreadOnly]
         #[name = "AdxFilePromiseDelegate"]
         #[ivars = PromiseIvars]
         struct PromiseDelegate;
@@ -112,7 +117,7 @@ mod imp {
             fn queue(&self, _provider: &NSFilePromiseProvider) -> Retained<NSOperationQueue> {
                 // Своя очередь, а не главная: писать будем блокирующе, и на
                 // главной это заморозило бы окно на всю передачу.
-                promise_queue(MainThreadMarker::new().expect("делегат на главном потоке"))
+                promise_queue()
             }
 
             #[unsafe(method(filePromiseProvider:writePromiseToURL:completionHandler:))]
@@ -132,7 +137,15 @@ mod imp {
                     }
                 };
 
-                let result = write_one(&ivars.app, &ivars.storage_id, &ivars.root, &target);
+                // Паника внутри скачивания иначе унесла бы с собой и событие
+                // о завершении, а его ждёт интерфейс: без него панель операций
+                // осталась бы с прогрессом навсегда, а тулбар - серым.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    write_one(&ivars.app, &ivars.storage_id, &ivars.root, &target)
+                }))
+                .unwrap_or_else(|_| {
+                    Err(AdxError::new(ErrorKind::Io, "передача сорвалась изнутри"))
+                });
                 let done = match &result {
                     Ok(outcome) => DragDoneDto::Done { outcome: outcome.clone() },
                     Err(e) => DragDoneDto::Failed { error: e.clone() },
@@ -163,13 +176,8 @@ mod imp {
     }
 
     impl PromiseDelegate {
-        fn new(
-            mtm: MainThreadMarker,
-            app: AppHandle,
-            storage_id: String,
-            root: DownloadRootDto,
-        ) -> Retained<Self> {
-            let this = Self::alloc(mtm).set_ivars(PromiseIvars { app, storage_id, root });
+        fn new(app: AppHandle, storage_id: String, root: DownloadRootDto) -> Retained<Self> {
+            let this = Self::alloc().set_ivars(PromiseIvars { app, storage_id, root });
             unsafe { objc2::msg_send![super(this), init] }
         }
     }
@@ -256,6 +264,28 @@ mod imp {
         }
     }
 
+    /// Один источник на процесс.
+    ///
+    /// Систему устраивает любой объект, но держит она его слабо и спрашивает
+    /// маску операций всё время перетаскивания. Отпустить его здесь значит
+    /// получить обращение к освобождённому объекту, а создавать новый на каждое
+    /// перетаскивание - копить их до выхода из приложения. Он не хранит
+    /// состояния, поэтому одного хватает на все.
+    fn drag_source(mtm: MainThreadMarker) -> Retained<DragSource> {
+        thread_local! {
+            static SOURCE: RefCell<Option<Retained<DragSource>>> = const { RefCell::new(None) };
+        }
+        SOURCE.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            if let Some(s) = slot.as_ref() {
+                return s.clone();
+            }
+            let s = DragSource::new(mtm);
+            *slot = Some(s.clone());
+            s
+        })
+    }
+
     /// Начать перетаскивание. Только с главного потока.
     pub fn start(
         app: &AppHandle,
@@ -274,21 +304,25 @@ mod imp {
             .currentEvent()
             .ok_or_else(|| AdxError::new(ErrorKind::Unsupported, "нет события мыши"))?;
 
-        let source = DragSource::new(mtm);
+        let source = drag_source(mtm);
         let icon = NSImage::imageNamed(unsafe { NSImageNameMultipleDocuments });
         let mut items: Vec<Retained<NSDraggingItem>> = Vec::new();
 
         for (i, root) in roots.into_iter().enumerate() {
             let file_type = uti_for(&root.name, root.is_folder);
-            let delegate = PromiseDelegate::new(mtm, app.clone(), storage_id.clone(), root);
+            let delegate = PromiseDelegate::new(app.clone(), storage_id.clone(), root);
             let provider = NSFilePromiseProvider::initWithFileType_delegate(
                 NSFilePromiseProvider::alloc(),
                 &NSString::from_str(file_type),
                 ProtocolObject::from_ref(&*delegate),
             );
-            // Провайдер держит делегата слабо (assign), как принято у
-            // делегатов в AppKit, а дроп случится уже после выхода отсюда.
-            std::mem::forget(delegate);
+            // Провайдер держит делегата слабо (assign), как принято у делегатов
+            // в AppKit, а спросят его уже после дропа - то есть после выхода
+            // отсюда. `userInfo` - единственное поле провайдера, которое
+            // ссылку удерживает, поэтому время жизни делегата привязано к нему,
+            // а не к процессу: `forget` тёк бы объектом на каждую строку
+            // каждого перетаскивания.
+            unsafe { provider.setUserInfo(Some(&delegate)) };
 
             let item = NSDraggingItem::initWithPasteboardWriter(
                 NSDraggingItem::alloc(),
@@ -313,8 +347,6 @@ mod imp {
             &event,
             ProtocolObject::from_ref(&*source),
         );
-        // Источник должен пережить сессию: система держит его слабо.
-        std::mem::forget(source);
         Ok(())
     }
 
