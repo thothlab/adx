@@ -101,6 +101,7 @@ const en = {
     zoom_out: "Zoom out",
     zoom_fit: "Fit",
     zoom_reset: "Back to fit",
+    pdf_page_failed: "This page could not be drawn: {{error}}",
     pdf_broken: "This file could not be read as a PDF.",
     prev: "Previous file",
     next: "Next file",

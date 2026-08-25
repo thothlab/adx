@@ -75,7 +75,18 @@ const PdfView: Component<{ bytes: ArrayBuffer; scale: number }> = (props) => {
       // The previous document goes first: paging through a folder of PDFs
       // otherwise leaves a worker and a parsed file per document looked at.
       await task?.destroy();
-      task = pdfjs.getDocument({ data: bytes.slice(0) });
+      task = pdfjs.getDocument({
+        data: bytes.slice(0),
+        // Substitution data for fonts the document does not carry itself.
+        // Without it pdf.js does not fail — it draws the page and silently
+        // leaves the text out, which is a white page with nothing to explain
+        // it. Real documents rely on this constantly: a "standard" font like
+        // Helvetica is expected to be supplied by the viewer, and a
+        // non-embedded CID font needs the character maps as well.
+        standardFontDataUrl: "pdfjs/standard_fonts/",
+        cMapUrl: "pdfjs/cmaps/",
+        cMapPacked: true,
+      });
       return await task.promise;
     },
   );
@@ -137,7 +148,21 @@ const Page: Component<{
   /** Width the page has to fit into, in CSS px. */
   available: number;
 }> = (props) => {
-  const [visible, setVisible] = createSignal(false);
+  /**
+   * The first page is drawn without waiting to be noticed.
+   *
+   * Not an optimisation — a correctness fix. The observer below watches a box
+   * that has no size until its own render has computed one, and an element of
+   * zero area is not reliably reported as visible: one WebKit says yes, another
+   * says no and never revisits the question. The result was a white rectangle
+   * of exactly the right size with nothing drawn in it, reported from a second
+   * machine while this one was fine. A page the user is looking at must not
+   * depend on that answer.
+   */
+  // eslint-disable-next-line solid/reactivity -- the page number of a given
+  // instance never changes: `<For>` creates one per page and keys them by it.
+  const [visible, setVisible] = createSignal(props.number === 1);
+  const [failure, setFailure] = createSignal<string | null>(null);
   let canvas: HTMLCanvasElement | undefined;
 
   const observer = new IntersectionObserver(
@@ -159,41 +184,72 @@ const Page: Component<{
   /** Placeholder size, so the layout is right before the first paint. */
   const [size, setSize] = createSignal({ width: 0, height: 0 });
 
+  /** The render in flight, cancelled by the next one. */
+  let pending: pdfjs.RenderTask | undefined;
+  onCleanup(() => pending?.cancel());
+
   createResource(
     () => ({ scale: props.scale, available: props.available, ready: visible() }),
     // eslint-disable-next-line solid/reactivity
     async ({ scale, available, ready }) => {
-      const page = await props.doc.getPage(props.number);
-      // The fit first, the ladder on top of it. `PADDING` is the padding of the
-      // column above, which is not available to the page.
-      const natural = page.getViewport({ scale: 1 });
-      const fit = available > PADDING ? (available - PADDING) / natural.width : 1;
-      const viewport = page.getViewport({ scale: fit * scale });
-      setSize({ width: viewport.width, height: viewport.height });
-      if (!ready || !canvas) return null;
-
-      // Drawn at the screen's real pixel density and shown at CSS size: a page
-      // rendered at 1x on a retina display is soft in exactly the way the old
-      // implementation was, which is the thing this is here to fix.
-      const ratio = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(viewport.width * ratio);
-      canvas.height = Math.floor(viewport.height * ratio);
-      const context = canvas.getContext("2d");
-      if (!context) return null;
-
-      const task = page.render({
-        canvas,
-        canvasContext: context,
-        viewport,
-        transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
-      });
-      // A zoom step while a page is still drawing would otherwise leave two
-      // renders writing into the same canvas, and the slower one wins.
-      onCleanup(() => task.cancel());
-      await task.promise;
-      return true;
+      try {
+        return await draw({ scale, available, ready });
+      } catch (e) {
+        // Said out loud, in the page's own box. A render that fails silently is
+        // the exact failure this component was written to remove: an empty
+        // rectangle tells the user nothing and tells us less.
+        const message = e instanceof Error ? e.message : String(e);
+        if (!message.toLowerCase().includes("cancel")) setFailure(message);
+        return null;
+      }
     },
   );
+
+  const draw = async ({
+    scale,
+    available,
+    ready,
+  }: {
+    scale: number;
+    available: number;
+    ready: boolean;
+  }) => {
+    const page = await props.doc.getPage(props.number);
+    // The fit first, the ladder on top of it. `PADDING` is the padding of the
+    // column above, which is not available to the page.
+    const natural = page.getViewport({ scale: 1 });
+    const fit = available > PADDING ? (available - PADDING) / natural.width : 1;
+    const viewport = page.getViewport({ scale: fit * scale });
+    setSize({ width: viewport.width, height: viewport.height });
+    if (!ready || !canvas) return null;
+
+    // Drawn at the screen's real pixel density and shown at CSS size: a page
+    // rendered at 1x on a retina display is soft in exactly the way the old
+    // implementation was, which is the thing this is here to fix.
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(viewport.width * ratio);
+    canvas.height = Math.floor(viewport.height * ratio);
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+
+    setFailure(null);
+    // A zoom step while a page is still drawing would otherwise leave two
+    // renders writing into the same canvas, and the slower one wins. Held in a
+    // variable the next run cancels, rather than in `onCleanup`: after an
+    // `await` there is no reactive owner left to register with, and the cleanup
+    // would silently never run.
+    pending?.cancel();
+    const task = page.render({
+      canvas,
+      canvasContext: context,
+      viewport,
+      transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
+    });
+    pending = task;
+    await task.promise;
+    pending = undefined;
+    return true;
+  };
 
   return (
     <div
@@ -206,6 +262,13 @@ const Page: Component<{
       }}
     >
       <canvas ref={canvas} style={{ width: `${size().width}px`, height: `${size().height}px` }} />
+      <Show when={failure()}>
+        {(message) => (
+          <div class="p-4 text-center text-xs text-danger">
+            {t()("preview.pdf_page_failed", { error: message() })}
+          </div>
+        )}
+      </Show>
     </div>
   );
 };

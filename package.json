@@ -4,8 +4,8 @@
   "version": "1.0.6",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "pnpm pdfjs-assets && vite",
+    "build": "pnpm pdfjs-assets && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -14,7 +14,8 @@
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "pdfjs-assets": "node scripts/copy-pdfjs-assets.mjs"
   },
   "dependencies": {
     "@solid-primitives/i18n": "^2.2.1",
