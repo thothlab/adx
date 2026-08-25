@@ -16,6 +16,7 @@ import { formatBytes } from "@/lib/format";
 import { isStreamed, isTruncatable, mimeOf, previewKind, PREVIEW_LIMITS } from "@/lib/preview";
 import { canZoomIn, canZoomOut, FIT, zoomIn, zoomOut, zoomPercent } from "@/lib/zoom";
 import { Button } from "@/components/Modal";
+import PdfView from "@/components/PdfView";
 
 /**
  * A quick look at a file without copying it off the device.
@@ -130,10 +131,18 @@ const Preview: Component<{
   // 1c85d97).
   onCleanup(releaseUrl);
 
-  /** Text arrives decoded, everything else as a URL the tag can point at. */
+  /**
+   * Text arrives decoded, a PDF as the bytes themselves, everything else as a
+   * URL the tag can point at.
+   *
+   * The PDF is the odd one out because it is drawn by `PdfView` rather than by
+   * the engine, and pdf.js wants the bytes. A `blob:` URL would mean handing
+   * the library a URL for it to fetch back out of memory it is already holding.
+   */
   interface Loaded {
     text?: string;
     url?: string;
+    bytes?: ArrayBuffer;
     truncated: boolean;
   }
 
@@ -171,6 +180,8 @@ const Preview: Component<{
         return { text: new TextDecoder("utf-8").decode(bytes), truncated: entry.size > cap };
       }
 
+      if (k === "pdf") return { bytes, truncated: false };
+
       objectUrl = URL.createObjectURL(new Blob([bytes], { type: mimeOf(k, entry.name) }));
       return { url: objectUrl, truncated: false };
     },
@@ -203,14 +214,11 @@ const Preview: Component<{
               step happened. */}
           <Chevron dir="prev" onClick={props.onPrev} />
           <Chevron dir="next" onClick={props.onNext} />
-          <span class="min-w-0 flex-1 truncate px-1 text-sm font-medium">{props.entry.name}</span>
-          <span class="shrink-0 text-xs text-fg-muted">{formatBytes(props.entry.size)}</span>
 
           {/* Only where there is something to scale, and only when there is
               something on screen to scale: a zoom widget over "no preview for
               this" is a control that does nothing. */}
           <Show when={zoomable()}>
-            <span class="mx-1 h-4 w-px shrink-0 bg-border" />
             <div class="flex shrink-0 items-center gap-0.5">
               <button
                 class="rounded p-1 text-fg-muted hover:bg-bg-muted hover:text-fg disabled:opacity-30 disabled:hover:bg-transparent"
@@ -241,6 +249,9 @@ const Preview: Component<{
               </button>
             </div>
           </Show>
+
+          <span class="min-w-0 flex-1 truncate px-1 text-sm font-medium">{props.entry.name}</span>
+          <span class="shrink-0 text-xs text-fg-muted">{formatBytes(props.entry.size)}</span>
 
           <button
             class="shrink-0 rounded p-1 text-fg-muted hover:bg-bg-muted hover:text-fg"
@@ -313,66 +324,13 @@ const Preview: Component<{
                       </Show>
 
                       <Show when={kind() === "pdf"}>
-                        {/* An `<object>` rather than an `<iframe>`: its children
-                            are a real fallback, rendered when the engine has no
-                            PDF viewer, which is the honest outcome on the
-                            platforms that do not.
-                            The hint below it is not redundant with that
-                            fallback. Whether a given engine renders the
-                            fallback or just paints an empty frame is its
-                            business, and an empty modal with no text is the one
-                            outcome the user cannot act on — worse than saying
-                            "no preview for this". So the way out is stated
-                            unconditionally, next to the viewer rather than
-                            instead of it. */}
-                        {/* Scaled with a transform, and that is the only lever
-                            the engine leaves. Its PDF viewer draws the page at
-                            a size of its own choosing and ignores every other
-                            way of asking for a different one — measured here,
-                            not assumed: a bigger `<object>` only moves the page
-                            inside a bigger box, `#zoom=200` in the URL is
-                            dropped, and the CSS `zoom` property does nothing to
-                            it. A transform does scale what is on screen, at the
-                            cost of enlarging pixels already drawn rather than
-                            re-drawing the page — so the text grows soft as the
-                            factor climbs. For a "look closer at this line" that
-                            is enough, and for reading a document properly the
-                            footer already points at the way that always works:
-                            copy it to the computer.
-
-                            The wrapper carries the scaled size so the box above
-                            has something to scroll; the viewer itself is laid
-                            out at the inverse and scaled back up, which keeps
-                            the page where the user expects it. */}
-                        <div
-                          class="h-full w-full"
-                          style={
-                            zoom() === FIT
-                              ? undefined
-                              : {
-                                  width: `${zoomPercent(zoom())}%`,
-                                  height: `${zoomPercent(zoom())}%`,
-                                }
-                          }
-                        >
-                          <object
-                            data={loaded().url}
-                            type="application/pdf"
-                            class="h-full w-full origin-top-left"
-                            style={
-                              zoom() === FIT
-                                ? undefined
-                                : {
-                                    width: `${100 / zoom()}%`,
-                                    height: `${100 / zoom()}%`,
-                                    transform: `scale(${zoom()})`,
-                                  }
-                            }
-                            aria-label={props.entry.name}
-                          >
-                            <Notice text={t()("preview.no_pdf_viewer")} />
-                          </object>
-                        </div>
+                        {/* Drawn by us, not by the engine — see `PdfView` for
+                            why. The zoom ladder is the render scale here, which
+                            is what makes a step on a PDF sharp rather than a
+                            stretched raster. */}
+                        <Show when={loaded().bytes}>
+                          {(bytes) => <PdfView bytes={bytes()} scale={zoom()} />}
+                        </Show>
                       </Show>
 
                       <Show when={kind() === "video"}>
@@ -427,11 +385,6 @@ const Preview: Component<{
         </div>
 
         <footer class="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
-          <Show when={kind() === "pdf" && !tooBig()}>
-            <span class="min-w-0 flex-1 truncate text-xs text-fg-muted">
-              {t()("preview.pdf_hint")}
-            </span>
-          </Show>
           <span class="ml-auto" />
           <Button onClick={() => props.onClose()}>{t()("dialog.close")}</Button>
         </footer>
