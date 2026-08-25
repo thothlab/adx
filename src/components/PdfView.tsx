@@ -1,6 +1,6 @@
 import { type Component, createResource, createSignal, For, onCleanup, Show } from "solid-js";
-import * as pdfjs from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
+import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { t } from "@/i18n";
 
 /**
@@ -20,6 +20,17 @@ import { t } from "@/i18n";
  * to. It also makes the zoom real — each step re-renders the page at the new
  * scale instead of stretching pixels that were already drawn, which is what the
  * previous implementation was reduced to.
+ *
+ * # Why the "legacy" build, and why the version is pinned
+ *
+ * Both for the same reason: the app runs inside whatever WebKit the user's
+ * macOS ships, and that is often older than the one this machine has. The
+ * current pdf.js calls `Map.prototype.getOrInsertComputed`, a method so new
+ * that an engine one release behind simply does not have it — reported from a
+ * second machine as "this page could not be drawn: getOrInsertComputed is not a
+ * function", which is exactly the sort of thing the message on the page exists
+ * to catch. The legacy build is the one transpiled for older engines, and the
+ * version is held where that call does not appear at all.
  *
  * # What is deliberately not here
  *
@@ -159,8 +170,9 @@ const Page: Component<{
    * machine while this one was fine. A page the user is looking at must not
    * depend on that answer.
    */
-  // eslint-disable-next-line solid/reactivity -- the page number of a given
-  // instance never changes: `<For>` creates one per page and keys them by it.
+  // The page number of a given instance never changes: `<For>` creates one per
+  // page and keys them by it.
+  // eslint-disable-next-line solid/reactivity
   const [visible, setVisible] = createSignal(props.number === 1);
   const [failure, setFailure] = createSignal<string | null>(null);
   let canvas: HTMLCanvasElement | undefined;

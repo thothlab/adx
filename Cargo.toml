@@ -3,7 +3,7 @@ resolver = "2"
 members = ["src-tauri", "crates/adx-core", "crates/adx-mtp"]
 
 [workspace.package]
-version = "1.0.7"
+version = "1.0.8"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
