@@ -7,6 +7,8 @@ const en = {
   app: {
     name: "ADX",
     tagline: "Android Device eXplorer",
+    /** Приписка к подзаголовку: версия запущенной сборки. */
+    version: "ver.{{version}}",
   },
   devices: {
     title: "Devices",

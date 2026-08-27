@@ -88,17 +88,6 @@ const Panel: Component<{
  * scrolling panel above it, a long device list would push it out of reach.
  */
 const SettingsFooter: Component = () => {
-  /**
-   * The running version, in the corner of every window.
-   *
-   * Not decoration. Every report of a bug arrives as a screenshot, and the
-   * first question about a screenshot is which build it was taken on — a
-   * question that cost a full round trip when a picture of a fixed bug turned
-   * out to be a picture of the version before the fix. The footer is in frame
-   * whenever the window is, so the answer travels with the evidence.
-   */
-  const [version] = createResource(() => getVersion());
-
   const themeName = () =>
     t()(
       theme() === "dark"
@@ -146,17 +135,14 @@ const SettingsFooter: Component = () => {
           </For>
         </span>
       </div>
-
-      {/* Quiet on purpose: this is a fact about the app, not a control. It sits
-          below the two rows a user actually presses. */}
-      <div class="px-3 pb-0.5 pt-1 text-right text-[11px] text-fg-muted">
-        {t()("app.name")} {version() ?? ""}
-      </div>
     </div>
   );
 };
 
 const Layout: Component = () => {
+  /** The running version, shown next to the name in the header. */
+  const [version] = createResource(() => getVersion());
+
   const [dragging, setDragging] = createSignal(false);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [updateOpen, setUpdateOpen] = createSignal(false);
@@ -281,7 +267,22 @@ const Layout: Component = () => {
       <header class="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
         <div class="flex items-baseline gap-2">
           <span class="text-sm font-semibold tracking-tight">{t()("app.name")}</span>
-          <span class="text-xs text-fg-muted">{t()("app.tagline")}</span>
+          {/* The version rides on the tail of the subtitle, in one line of the
+              same quiet grey — and, more to the point, in frame on every
+              screenshot of the window. Every report of a defect arrives as a
+              picture, and the first question about a picture is which build it
+              was taken on; here the answer travels with the evidence instead of
+              costing a round of letters.
+
+              Shown only once it is known: a subtitle that reads "…, ver." for a
+              moment and then grows a number is a flicker in the first thing the
+              eye lands on. */}
+          <span class="text-xs text-fg-muted">
+            {t()("app.tagline")}
+            <Show when={version()}>
+              {(v) => <>, {t()("app.version", { version: v() })}</>}
+            </Show>
+          </span>
         </div>
 
         {/* Refresh stays in the header: it acts on the device list, which is
