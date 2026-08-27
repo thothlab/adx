@@ -1,6 +1,7 @@
 import {
   type Component,
   createEffect,
+  createResource,
   createSignal,
   For,
   type JSX,
@@ -10,6 +11,7 @@ import {
   Show,
 } from "solid-js";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   HardDrive,
   Languages,
@@ -42,13 +44,7 @@ import {
   selected,
   watchDevices,
 } from "@/stores/devices";
-import {
-  canWrite,
-  closeDevice,
-  openDevice,
-  refreshStorages,
-  revalidate,
-} from "@/stores/browser";
+import { canWrite, closeDevice, openDevice, refreshStorages, revalidate } from "@/stores/browser";
 import {
   resetSidebarWidth,
   resetTreeWidth,
@@ -92,6 +88,17 @@ const Panel: Component<{
  * scrolling panel above it, a long device list would push it out of reach.
  */
 const SettingsFooter: Component = () => {
+  /**
+   * The running version, in the corner of every window.
+   *
+   * Not decoration. Every report of a bug arrives as a screenshot, and the
+   * first question about a screenshot is which build it was taken on — a
+   * question that cost a full round trip when a picture of a fixed bug turned
+   * out to be a picture of the version before the fix. The footer is in frame
+   * whenever the window is, so the answer travels with the evidence.
+   */
+  const [version] = createResource(() => getVersion());
+
   const themeName = () =>
     t()(
       theme() === "dark"
@@ -138,6 +145,12 @@ const SettingsFooter: Component = () => {
             )}
           </For>
         </span>
+      </div>
+
+      {/* Quiet on purpose: this is a fact about the app, not a control. It sits
+          below the two rows a user actually presses. */}
+      <div class="px-3 pb-0.5 pt-1 text-right text-[11px] text-fg-muted">
+        {t()("app.name")} {version() ?? ""}
       </div>
     </div>
   );
